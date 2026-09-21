@@ -7,7 +7,7 @@ export const API_URL =
 const TOKENS_KEY = "evently-tokens";
 
 export type Tokens = { access_token: string; refresh_token: string };
-export type ApiUser = { id: number; name: string; email: string; role: string };
+export type ApiUser = { id: number; name: string; email: string; role: string; wallet_address?: string | null; wallet_verified_at?: string | null };
 export type ServerEvent = {
   id: number;
   organizer_id: number;
@@ -24,11 +24,18 @@ export type ServerEvent = {
   cover_url: string;
 };
 export type ServerTicket = {
+  id: number;
   code: string;
   status: string;
   event_id: number;
   event_title: string;
   registration_id: number;
+  wallet_address: string | null;
+  solana_signature: string | null;
+  token_address: string | null;
+  blockchain_status: "pending" | "confirmed" | "failed" | "used";
+  explorer_url: string | null;
+  checked_in_at: string | null;
 };
 export type ServerWaitlist = {
   registration_id: number;
@@ -139,6 +146,21 @@ export const Auth = {
   },
 };
 
+export const Wallet = {
+  challenge(wallet_address: string) {
+    return api<{ message: string; expires_at: string }>("/wallet/challenge", {
+      method: "POST",
+      body: JSON.stringify({ wallet_address }),
+    });
+  },
+  verify(wallet_address: string, message: string, signature: string) {
+    return api<{ wallet_address: string; verified: boolean }>("/wallet/verify", {
+      method: "POST",
+      body: JSON.stringify({ wallet_address, message, signature }),
+    });
+  },
+};
+
 export const Events = {
   list(params: { q?: string; category?: string; city?: string } = {}) {
     const qs = new URLSearchParams();
@@ -157,16 +179,28 @@ export const Events = {
   register(id: number) {
     return api<ServerTicket>(`/events/${id}/register`, { method: "POST" });
   },
+  confirmBlockchain(ticketId: number, solana_signature: string, token_address: string) {
+    return api<ServerTicket>(`/tickets/${ticketId}/blockchain`, {
+      method: "POST",
+      body: JSON.stringify({ solana_signature, token_address }),
+    });
+  },
   joinWaitlist(id: number) {
     return api<ServerWaitlist>(`/events/${id}/waitlist`, { method: "POST" });
   },
   cancelRegistration(regId: number) {
     return api<void>(`/registrations/${regId}`, { method: "DELETE" });
   },
-  checkIn(code: string) {
-    return api<{ result: string; event_id: number; event_title: string }>("/check-in", {
+  prepareCheckIn(code: string) {
+    return api<{ ticket_id: number; event_id: number; memo: string }>("/check-in/prepare", {
       method: "POST",
       body: JSON.stringify({ code }),
+    });
+  },
+  checkIn(code: string, check_in_signature: string) {
+    return api<{ result: string; event_id: number; event_title: string; check_in_signature: string; explorer_url: string }>("/check-in", {
+      method: "POST",
+      body: JSON.stringify({ code, check_in_signature }),
     });
   },
   myTickets() {

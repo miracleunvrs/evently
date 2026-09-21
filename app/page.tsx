@@ -8,6 +8,7 @@ import {
   Check,
   ChevronDown,
   Download,
+  ExternalLink,
   Eye,
   FileText,
   Frame,
@@ -30,6 +31,7 @@ import {
   Type,
   User,
   Users,
+  WalletCards,
   X,
 } from "lucide-react";
 import { type CSSProperties, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
@@ -44,7 +46,9 @@ import {
   loadTokens,
   type ApiUser,
   type ServerEvent,
+  type ServerTicket,
 } from "../lib/api";
+import { connectAndVerifyWallet, createCheckInProof, mintNonTransferableTicket, shortWallet } from "../lib/web3";
 
 type Role = "visitor" | "organizer" | "admin";
 type View =
@@ -78,7 +82,17 @@ type EventItem = {
   past: boolean;
 };
 
-type Reg = { code: string; used: boolean; regId?: number };
+type Reg = {
+  code: string;
+  used: boolean;
+  regId?: number;
+  ticketId?: number;
+  wallet?: string | null;
+  blockchainStatus?: "pending" | "confirmed" | "failed" | "used";
+  signature?: string | null;
+  tokenAddress?: string | null;
+  explorerUrl?: string | null;
+};
 type WaitEntry = { regId?: number; position: number; joinedAt?: string };
 type WebMcpTool = { name: string; title: string; description: string; inputSchema: object; annotations?: { readOnlyHint?: boolean; untrustedContentHint?: boolean }; execute: (input: unknown) => unknown | Promise<unknown> };
 declare global { interface Document { modelContext?: { registerTool: (tool: WebMcpTool, options?: { signal?: AbortSignal }) => void | Promise<void> } } }
@@ -99,6 +113,20 @@ function downloadCSV(filename: string, text: string) {
   a.download = filename;
   a.click();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function serverTicketToReg(ticket: ServerTicket): Reg {
+  return {
+    code: ticket.code,
+    used: ticket.status !== "active",
+    regId: ticket.registration_id,
+    ticketId: ticket.id,
+    wallet: ticket.wallet_address,
+    blockchainStatus: ticket.blockchain_status,
+    signature: ticket.solana_signature,
+    tokenAddress: ticket.token_address,
+    explorerUrl: ticket.explorer_url,
+  };
 }
 
 function parseCSV(text: string): GuestRow[] {
@@ -384,6 +412,8 @@ function Topbar({
   role,
   profile,
   apiUp,
+  walletAddress,
+  onConnectWallet,
 }: {
   onMenu: () => void;
   query: string;
@@ -391,6 +421,8 @@ function Topbar({
   role: Role;
   profile: Profile | null;
   apiUp: boolean;
+  walletAddress: string | null;
+  onConnectWallet: () => void;
 }) {
   const display = profile?.name ?? "Гость";
   const initials = display.split(/\s+/).map((w) => w[0]).join("").slice(0, 2).toUpperCase();
@@ -399,6 +431,7 @@ function Topbar({
       <button className="menu-button" onClick={onMenu} aria-label="Открыть меню"><Menu /></button>
       <span className={apiUp ? "api-dot on" : "api-dot"} title={apiUp ? "API подключён" : "Офлайн-режим"} />
       <label className="search"><Search /><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Найти событие, компанию или город" /></label>
+      {apiUp && <button className={walletAddress ? "wallet-button connected" : "wallet-button"} onClick={onConnectWallet}><WalletCards /> {walletAddress ? shortWallet(walletAddress) : "Connect Phantom"}</button>}
       <button className="icon-button" aria-label="Настройки"><Settings /></button>
       <button className="profile"><span>{initials}</span><span className="profile-copy"><strong>{display}</strong><small>{roleLabels[role]}</small></span><ChevronDown /></button>
     </header>
@@ -565,14 +598,14 @@ function TicketView({ regs, events, profile, onCancel }: { regs: Record<string, 
           return (
             <div className="ticket-layout" key={event.id}>
               <article className="ticket-card">
-                <div className="ticket-top"><EventlyMark /><span>{reg.used ? "USED" : "CONFIRMED"}</span></div>
+                <div className="ticket-top"><EventlyMark /><span>{reg.used ? "USED" : reg.blockchainStatus === "confirmed" ? "SOLANA VERIFIED" : "PENDING"}</span></div>
                 <div><small>ORBIT LABS ПРЕДСТАВЛЯЕТ</small><h2>{event.title}</h2></div>
                 <div className="ticket-meta"><span><small>ДАТА</small>{event.date}</span><span><small>МЕСТО</small>{event.place}</span></div>
                 <div className="ticket-owner"><span><small>ГОСТЬ</small>{guest}</span><span><small>БИЛЕТ</small>{reg.code}</span></div>
                 <div className="ticket-qr-row"><RealQr code={reg.code} /></div>
-                <p>Покажите QR-код сотруднику на входе · повторный проход запрещён</p>
+                <p>{reg.blockchainStatus === "confirmed" || reg.blockchainStatus === "used" ? "Solana Verified ✓ · непередаваемый Token-2022" : "Blockchain confirmation pending"}</p>
               </article>
-              <div className="ticket-actions"><h3>Билет готов</h3><p>Сохраните его на телефон или распечатайте. QR-код одинаковый во всех форматах.</p><button onClick={() => window.print()}><Download /> Скачать PDF</button><button onClick={() => downloadTicketPNG(event, reg.code, guest)}><ImagePlus /> Сохранить PNG</button><a className="ticket-mail" href={`mailto:${profile?.email ?? ""}?subject=${encodeURIComponent(`Билет: ${event.title}`)}&body=${encodeURIComponent(`Ваш билет ${reg.code} на «${event.title}» (${event.date}, ${event.place}, ${event.city}). Покажите QR-код на входе.`)}`}><Send /> Отправить на email</a><button onClick={() => onCancel(event.id)} disabled={reg.used}>{reg.used ? "Билет использован" : "Отменить регистрацию"}</button></div>
+              <div className="ticket-actions"><h3>Билет готов</h3><p>Сохраните его на телефон или распечатайте. QR-код одинаковый во всех форматах.</p>{reg.wallet && <div className={reg.blockchainStatus === "confirmed" || reg.blockchainStatus === "used" ? "chain-proof" : "chain-proof pending"}><span><ShieldCheck /> {reg.blockchainStatus === "confirmed" || reg.blockchainStatus === "used" ? "Solana Verified" : "Solana Pending"}</span><small>Wallet · {shortWallet(reg.wallet)}</small>{reg.tokenAddress && <small>Token · {shortWallet(reg.tokenAddress)}</small>}{reg.explorerUrl && <a href={reg.explorerUrl} target="_blank" rel="noreferrer">View on Solana Explorer <ExternalLink /></a>}</div>}<button onClick={() => window.print()}><Download /> Скачать PDF</button><button onClick={() => downloadTicketPNG(event, reg.code, guest)}><ImagePlus /> Сохранить PNG</button><a className="ticket-mail" href={`mailto:${profile?.email ?? ""}?subject=${encodeURIComponent(`Билет: ${event.title}`)}&body=${encodeURIComponent(`Ваш билет ${reg.code} на «${event.title}» (${event.date}, ${event.place}, ${event.city}). Покажите QR-код на входе.`)}`}><Send /> Отправить на email</a><button onClick={() => onCancel(event.id)} disabled={reg.used}>{reg.used ? "Билет использован" : "Отменить регистрацию"}</button></div>
             </div>
           );
         })}
@@ -1051,6 +1084,7 @@ export default function Home() {
   // Серверный слой: apiUp — доступен ли API; при недоступности — локальный fallback.
   const [apiUp, setApiUp] = useState(false);
   const [serverUser, setServerUser] = useState<ApiUser | null>(null);
+  const [walletAddress, setWalletAddress] = useState<string | null>(null);
   const [serverEvents, setServerEvents] = useState<ServerEvent[]>([]);
   const [serverRegs, setServerRegs] = useState<Record<string, Reg>>({});
   const [serverWaitlist, setServerWaitlist] = useState<Record<string, WaitEntry>>({});
@@ -1100,11 +1134,12 @@ export default function Home() {
         const me = await Auth.me();
         if (cancelled) return;
         setServerUser(me);
+        setWalletAddress(me.wallet_address ?? null);
         const [tickets, favs, queued] = await Promise.all([Events.myTickets(), Events.myFavorites(), Events.myWaitlist()]);
         if (cancelled) return;
         const sr: Record<string, Reg> = {};
         tickets.forEach((t) => {
-          sr[String(t.event_id)] = { code: t.code, used: t.status !== "active", regId: t.registration_id };
+          sr[String(t.event_id)] = serverTicketToReg(t);
         });
         setServerRegs(sr);
         setServerFavs(favs);
@@ -1177,10 +1212,33 @@ export default function Home() {
   };
 
   const registerOnline = async (id: number) => {
+    let address = walletAddress;
+    if (!address) {
+      address = await connectAndVerifyWallet();
+      setWalletAddress(address);
+    }
     const t = await Events.register(id);
-    setServerRegs((s) => ({ ...s, [String(id)]: { code: t.code, used: false, regId: t.registration_id } }));
+    setServerRegs((s) => ({ ...s, [String(id)]: serverTicketToReg(t) }));
+    const chain = await mintNonTransferableTicket(id, t.registration_id, address);
+    const confirmed = await Events.confirmBlockchain(t.id, chain.signature, chain.tokenAddress);
+    setServerRegs((s) => ({ ...s, [String(id)]: serverTicketToReg(confirmed) }));
     await refreshServerEvents();
     setView("tickets");
+  };
+
+  const connectWallet = async () => {
+    if (!online || !serverUser) {
+      setMessage("Сначала войдите в аккаунт Evently");
+      return;
+    }
+    try {
+      const address = await connectAndVerifyWallet();
+      setWalletAddress(address);
+      setServerUser((user) => user ? { ...user, wallet_address: address, wallet_verified_at: new Date().toISOString() } : user);
+      setMessage("Phantom подключён и подтверждён");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Не удалось подключить Phantom");
+    }
   };
 
   const joinWaitlistOnline = async (id: number) => {
@@ -1232,10 +1290,11 @@ export default function Home() {
     }
     const t = mode === "login" ? await Auth.login(email, password) : await Auth.register(name, email, password);
     setServerUser(t.user);
+    setWalletAddress(t.user.wallet_address ?? null);
     const [tickets, favs, queued] = await Promise.all([Events.myTickets(), Events.myFavorites(), Events.myWaitlist()]);
     const sr: Record<string, Reg> = {};
     tickets.forEach((x) => {
-      sr[String(x.event_id)] = { code: x.code, used: x.status !== "active", regId: x.registration_id };
+      sr[String(x.event_id)] = serverTicketToReg(x);
     });
     setServerRegs(sr);
     setServerFavs(favs);
@@ -1262,6 +1321,7 @@ export default function Home() {
   const logout = () => {
     clearTokens();
     setServerUser(null);
+    setWalletAddress(null);
     setServerRegs({});
     setServerWaitlist({});
     setServerFavs([]);
@@ -1305,14 +1365,21 @@ export default function Home() {
     if (!input) { setMessage("Введите код билета или выберите гостя"); return; }
     if (online && serverUser) {
       try {
-        await Events.checkIn(input);
+        let address = walletAddress;
+        if (!address) {
+          address = await connectAndVerifyWallet();
+          setWalletAddress(address);
+        }
+        const prepared = await Events.prepareCheckIn(input);
+        const proof = await createCheckInProof(prepared.memo, address);
+        const checked = await Events.checkIn(input, proof);
         const code = input.toUpperCase();
         setServerRegs((s) => {
           const key = Object.keys(s).find((k) => s[k].code === code);
-          return key ? { ...s, [key]: { ...s[key], used: true } } : s;
+          return key ? { ...s, [key]: { ...s[key], used: true, blockchainStatus: "used" } } : s;
         });
         patch({ log: [...persisted.log, { label: code, result: "ok", at: new Date().toISOString() }] });
-        setMessage("Проход разрешён");
+        setMessage(`Проход разрешён · check-in записан в Solana: ${shortWallet(checked.check_in_signature)}`);
       } catch (e) {
         const status = e instanceof ApiError ? e.status : 0;
         if (status === 409) {
@@ -1465,7 +1532,7 @@ export default function Home() {
       <Sidebar view={view} setView={setView} open={menuOpen} close={() => setMenuOpen(false)} role={role} setRole={(r) => patch({ role: r })} ticketCount={Object.keys(regs).length} loggedIn={serverUser !== null} />
       {menuOpen && <button className="scrim" onClick={() => setMenuOpen(false)} aria-label="Закрыть меню" />}
       <div className="main-shell">
-        <Topbar onMenu={() => setMenuOpen(true)} query={query} setQuery={setQuery} role={role} profile={displayProfile} apiUp={online} />
+        <Topbar onMenu={() => setMenuOpen(true)} query={query} setQuery={setQuery} role={role} profile={displayProfile} apiUp={online} walletAddress={walletAddress} onConnectWallet={connectWallet} />
         {pendingId !== null && <AuthModal apiUp={online} onSubmit={submitAuth} onClose={() => setPendingId(null)} />}
         {view === "discover" && selected && (
           <Discover list={visible} selected={selected} setSelected={(e) => setSelectedId(e.id)} regs={regs} register={register} favorites={favorites} toggleFav={toggleFav} online={online} waitlist={waitlist} leaveWaitlist={leaveWaitlist} />

@@ -30,6 +30,7 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+!.env.example
 
 # vercel
 .vercel
@@ -51,3 +52,12 @@ next-env.d.ts
 api/.venv/
 .opencode/node_modules/
 .opencode/package-lock.json
+backend/config/master.key
+backend/config/credentials/*.key
+backend/config/credentials.yml.enc
+backend/.bundle/
+backend/log/*
+backend/tmp/*
+backend/vendor/bundle/
+!backend/log/.keep
+!backend/tmp/.keep
