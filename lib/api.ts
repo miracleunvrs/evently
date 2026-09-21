@@ -1,8 +1,13 @@
 // Клиент Evently API. Токены — в localStorage (решение по грилю).
 // При недоступном API фронт работает на локальных данных (fallback).
 
+const DEFAULT_API_URL =
+  typeof process !== "undefined" && process.env.NODE_ENV === "production"
+    ? "https://evently-api-production-1056.up.railway.app"
+    : "http://127.0.0.1:8000";
+
 export const API_URL =
-  (typeof process !== "undefined" && process.env.NEXT_PUBLIC_API_URL) || "http://127.0.0.1:8000";
+  (typeof process !== "undefined" && process.env.NEXT_PUBLIC_API_URL) || DEFAULT_API_URL;
 
 const TOKENS_KEY = "evently-tokens";
 
