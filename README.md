@@ -1,55 +1,68 @@
-# Evently
+# Evently — PWA MVP
 
-Evently is a multi-organization event platform for publishing events, managing guests, creating personalized invitations, issuing QR tickets, handling check-in, and reviewing attendance analytics.
+Платформа для создания, поиска и управления мероприятиями: регистрация участников, именные QR-билеты, проверка на входе со сканером камеры, список гостей, студия приглашений. Полная спецификация — в [SPEC.md](./SPEC.md).
 
-## Current demo
+## Запуск
 
-- Public event catalog with filters and capacity indicators
-- Organization dashboard and event management
-- Invitation editor with templates, editable typography, dynamic fields, and color controls
-- Mobile, PDF, and PNG ticket flows
-- Guest directory with search and CSV-oriented actions
-- Interactive check-in list and QR scanner concept
-- Registration funnel and attendance analytics
-- Responsive PWA shell for desktop and mobile
+Требуется Node.js `>=22.13.0`.
 
-## Run locally
-
-```bash
-npm run install:ci
-npm run dev
+```sh
+npm run dev    # разработка, http://localhost:5173
+npm run build  # production-сборка
+npm start      # предпросмотр сборки, http://127.0.0.1:8787
 ```
 
-Open `http://localhost:5173`.
+## Что умеет демо
 
-## Stack
+- **Афиша**: каталог, живой поиск, фильтры по категориям, избранное. Даты сидов относительные — не протухают; есть прошедшее событие с бейджем «Завершено».
+- **Регистрация**: форма имя+email, лимит мест (sold out), 1 человек = 1 билет, отмена регистрации освобождает место.
+- **Лист ожидания**: при sold out гость занимает место в FIFO-очереди; после отмены подтверждённой регистрации первый ожидающий автоматически получает активный QR-билет.
+- **Билеты**: настоящие сканируемые QR (`qrcode`), скачивание PNG/PDF, отправка через `mailto:`.
+- **Check-in**: ввод кода, отметка из списка, **сканер камеры** (`html5-qrcode`) — всё пишет в единый журнал; повторный проход блокируется.
+- **Роли**: переключатель Гость / Орг / Админ в сайдбаре. Кабинет посетителя, панель организатора + создание событий, гости (CSV импорт/экспорт), аналитика только из реальных данных, админка с модерацией.
+- **Студия приглашений**: шаблоны, акцент, размер шрифта, вставка текста/фото/QR/фигур, предпросмотр.
+- **PWA**: manifest, service worker (навигации — сеть первой, `_next/static` — из кэша), иконки 192/512.
 
-Next.js-compatible Vinext runtime, React, TypeScript, Tailwind CSS, Lucide icons, and Cloudflare Sites. The product architecture is prepared for a shared TypeScript monorepo with an Expo app and a replaceable payment provider.
+Данные демо хранятся в `localStorage` (ключ `evently-v1`). Схема БД (Drizzle, 8 таблиц) и миграции лежат в `db/` и `drizzle/` — задел под backend.
 
----
+## Структура
 
-# Evently — Русский
+- `app/page.tsx` — весь MVP (клиентский компонент, состояние + localStorage)
+- `app/layout.tsx`, `app/globals.css` — оболочка и тема
+- `app/manifest.ts`, `public/sw.js`, `public/icon-*.png` — PWA
+- `db/schema.ts` — users, categories, events, event_images, registrations, tickets, favorites, check_ins
+- `SPEC.md` — спецификация и логика (§10)
 
-Evently — мультиорганизационная платформа для публикации мероприятий, управления гостями, создания персональных приглашений, выпуска QR-билетов, check-in и аналитики посещаемости.
+## Backend (FastAPI + PostgreSQL)
 
-## Что работает в демо
-
-- Каталог мероприятий с фильтрами и отображением свободных мест
-- Панель организации и управление событиями
-- Редактор приглашений с шаблонами, типографикой, динамическими полями и цветами
-- Билеты для мобильного экрана, PDF и PNG
-- Поиск по гостям и действия для CSV
-- Интерактивный check-in и концепт QR-сканера
-- Воронка регистрации и аналитика посещений
-- Адаптивная PWA для компьютера и телефона
-
-## Локальный запуск
-
-```bash
-npm run install:ci
-npm run dev
+```sh
+cp .env.example .env          # при желании поменять JWT_SECRET
+docker compose up -d db api   # Postgres :5544, API :8000
 ```
 
-Откройте `http://localhost:5173`.
+- API: http://127.0.0.1:8000, доки: http://127.0.0.1:8000/docs, health: `/health`
+- Демо-доступ: `orga@example.com` / `orga123` (организатор)
+- Тесты: `pytest api/tests` (нужен Postgres; в контейнере: `docker compose run --rm api pytest tests -q`)
+- Линт: `ruff check api`
+- Правила на сервере: capacity атомарно (`FOR UPDATE`), пара (event, user) уникальна, FIFO-лист ожидания продвигается в той же транзакции, гашение билета атомарно (`active → used`), чужое событие — 403.
+- Фронт находит API сам (`NEXT_PUBLIC_API_URL`, по умолчанию `http://127.0.0.1:8000`): каталог, вход, билеты и check-in идут через сервер; без API — офлайн-режим на localStorage. Зелёная точка в топбаре = API подключён.
+- CI (`.github/workflows/ci.yml`): ruff + pytest с Postgres-сервисом, tsc + eslint + build для фронта.
 
-Подробные границы продукта и дорожная карта находятся в [PRODUCT_SPEC.md](./PRODUCT_SPEC.md).
+## Демо-сценарий (2 минуты)
+
+1. Афиша → открыть событие → «Получить билет» → ввести имя/email.
+2. «Мои билеты» → проверить QR камерой телефона.
+3. Роль «Орг» → Check-in → «Открыть сканер» → навести на QR → «Проход разрешён»; повторить → «Уже отмечен».
+4. Гости → экспорт CSV; Аналитика → реальные цифры.
+
+## Публикация демо
+
+```sh
+npm run build && npm start
+```
+
+Для публичной ссылки задеплоить `dist/` как Cloudflare Workers (конфиг генерируется в `dist/server/wrangler.json`) либо отдать `dist/client` любым статическим хостингом. PWA требует HTTPS (сканер камеры иначе не запустится).
+
+## Дальше (backend)
+
+FastAPI + PostgreSQL + JWT (access/refresh), генерация QR на сервере, оплата с комиссией 3–5%, email/Telegram-уведомления. Схема `db/` портируется на Postgres один в один.

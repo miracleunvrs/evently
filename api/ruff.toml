@@ -1,0 +1,3 @@
+[lint]
+# B008: вызовы Depends()/Query() в сигнатурах — штатный паттерн FastAPI.
+ignore = ["B008"]

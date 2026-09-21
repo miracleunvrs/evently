@@ -38,9 +38,16 @@ yarn-error.log*
 next-env.d.ts
 /dist/
 /.wrangler/
-# Checkout-local execution profile and tool state; never publish them.
 /.sites-runtime/
 /.agents/
 /.codex/
 /outputs/
 /work/
+.ruff_cache/
+.pytest_cache/
+**/__pycache__/
+*.py[cod]
+*.tsbuildinfo
+api/.venv/
+.opencode/node_modules/
+.opencode/package-lock.json

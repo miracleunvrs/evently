@@ -29,7 +29,7 @@ async function exists(path: string): Promise<boolean> {
   }
 }
 
-export function sites({ mockAuth = true } = {}): Plugin {
+export function sites(): Plugin {
   let root = process.cwd();
   let command: "build" | "serve" = "build";
 
@@ -40,7 +40,6 @@ export function sites({ mockAuth = true } = {}): Plugin {
       command = config.command;
     },
     configureServer(server) {
-      if (!mockAuth) return;
       const secure = Boolean(server.config.server.https);
 
       server.config.logger.info(`Sites local sign-in: ${localEmail}`);
