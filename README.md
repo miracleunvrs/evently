@@ -4,6 +4,13 @@ Evently is an event platform with verifiable, non-transferable tickets on Solana
 
 Русская версия находится [ниже](#русская-версия).
 
+## Live demo
+
+- Web app: [evently-events.miracl3rk.chatgpt.site](https://evently-events.miracl3rk.chatgpt.site/)
+- API health: [evently-api-production-1056.up.railway.app/health](https://evently-api-production-1056.up.railway.app/health)
+
+The hosted version uses Solana Devnet. Connect Phantom in Devnet mode and use test SOL only.
+
 ## Why blockchain is used
 
 Blockchain does not replace PostgreSQL. Event descriptions, users, capacity, waitlists, analytics and QR check-ins remain in the application database. Solana records the part that benefits from independent verification: issuance of a unique ticket, its mint address, owner wallet and transaction history.
@@ -89,6 +96,13 @@ The MVP uses free tickets and Solana Devnet. It does not include crypto payments
 ## Русская версия
 
 Evently — платформа мероприятий с проверяемыми непередаваемыми билетами в Solana Devnet. Организатор создаёт событие и проверяет QR на входе, а гость входит по email, подтверждает Phantom-кошелёк и получает Token-2022 билет.
+
+### Онлайн-версия
+
+- Сайт: [evently-events.miracl3rk.chatgpt.site](https://evently-events.miracl3rk.chatgpt.site/)
+- Проверка API: [evently-api-production-1056.up.railway.app/health](https://evently-api-production-1056.up.railway.app/health)
+
+Онлайн-версия работает в Solana Devnet. В Phantom нужно выбрать Devnet и использовать только тестовый SOL.
 
 ### Зачем здесь блокчейн
 
