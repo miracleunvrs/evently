@@ -1,0 +1,1 @@
+CREATE INDEX `registrations_event_status_created_idx` ON `registrations` (`event_id`,`status`,`created_at`);
