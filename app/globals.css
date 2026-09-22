@@ -54,9 +54,6 @@ svg { width:19px; height:19px; stroke-width:1.8; }
 @media(max-width:700px){.guest-tools{flex-wrap:wrap}.guest-tools label{min-width:100%}.guest-tools button{flex:1}.guest-row{grid-template-columns:42px minmax(0,1fr) 28px}.guest-status{display:none}.scanner-card{max-width:440px}}
 @media print{.sidebar,.topbar,.ticket-actions{display:none!important}.app-shell,.main-shell{display:block}.ticket-page{padding:0;background:#fff}.ticket-page>h1,.ticket-page>.section-kicker{display:none}.ticket-layout{display:block;margin:0}.ticket-card{width:148mm;height:210mm;margin:0 auto;box-shadow:none;break-inside:avoid}}
 .nav-badge{margin-left:auto;min-width:22px;height:22px;padding:0 6px;display:inline-grid;place-items:center;background:#fff;color:#18171d;border-radius:99px;font-size:11px;font-weight:900;font-style:normal}
-.role-switch{margin:14px 4px 10px;padding:3px;display:grid;grid-template-columns:1fr 1fr 1fr;gap:3px;background:#27252d;border-radius:10px}
-.role-switch button{border:0;background:transparent;color:#aaa7b1;border-radius:7px;font-size:11px;font-weight:800;padding:7px 0}
-.role-switch button.active{background:var(--lime);color:#18171d}
 .card-side{display:grid;gap:10px;justify-items:end;margin-right:18px}
 .card-arrow{margin-right:0}
 .fav-button{width:34px;height:34px;display:grid;place-items:center;border:1px solid var(--line);border-radius:50%;background:#fff;color:#8a8590}
@@ -161,6 +158,7 @@ svg { width:19px; height:19px; stroke-width:1.8; }
 .auth-modal label{margin-bottom:15px;color:#4a454e;font-size:11px;letter-spacing:.08em}
 .auth-modal input{width:100%;height:48px;border-color:#ded9d0;background:#fff;font-size:14px}
 .auth-modal input:focus{border-color:var(--violet);outline:2px solid #5638ef25;outline-offset:0}
+.auth-email-note{margin:-7px 0 16px;color:#6c6571;font-size:12px;line-height:1.4}
 .auth-password{position:relative;display:block}
 .auth-password input{padding-right:100px}
 .auth-password button{position:absolute;top:50%;right:8px;transform:translateY(-50%);display:flex;align-items:center;gap:5px;padding:6px;border:0;background:transparent;color:#6c6276;font-size:11px;font-weight:800}
