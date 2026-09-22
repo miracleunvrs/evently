@@ -144,12 +144,16 @@ function parseCSV(text: string): GuestRow[] {
 
 // Даты сидов — относительные (не протухают): dayOffset от сегодня, past = offset < 0.
 function dateFor(offset: number, time: string) {
-  const d = new Date();
-  d.setDate(d.getDate() + offset);
+  const almatyParts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Almaty", year: "numeric", month: "2-digit", day: "2-digit",
+  }).formatToParts(new Date());
+  const part = (type: string) => almatyParts.find((entry) => entry.type === type)?.value ?? "";
+  const d = new Date(`${part("year")}-${part("month")}-${part("day")}T12:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + offset);
   return {
-    date: `${d.toLocaleDateString("ru-RU", { day: "numeric", month: "long" })} · ${time}`,
-    day: String(d.getDate()).padStart(2, "0"),
-    month: d.toLocaleDateString("ru-RU", { month: "short" }).replace(".", "").slice(0, 3).toUpperCase(),
+    date: `${d.toLocaleDateString("ru-RU", { day: "numeric", month: "long", timeZone: "UTC" })} · ${time}`,
+    day: String(d.getUTCDate()).padStart(2, "0"),
+    month: d.toLocaleDateString("ru-RU", { month: "short", timeZone: "UTC" }).replace(".", "").slice(0, 3).toUpperCase(),
     past: offset < 0,
   };
 }
@@ -414,6 +418,8 @@ function Topbar({
   apiUp,
   walletAddress,
   onConnectWallet,
+  loggedIn,
+  onAccount,
 }: {
   onMenu: () => void;
   query: string;
@@ -423,6 +429,8 @@ function Topbar({
   apiUp: boolean;
   walletAddress: string | null;
   onConnectWallet: () => void;
+  loggedIn: boolean;
+  onAccount: () => void;
 }) {
   const display = profile?.name ?? "Гость";
   const initials = display.split(/\s+/).map((w) => w[0]).join("").slice(0, 2).toUpperCase();
@@ -431,9 +439,9 @@ function Topbar({
       <button className="menu-button" onClick={onMenu} aria-label="Открыть меню"><Menu /></button>
       <span className={apiUp ? "api-dot on" : "api-dot"} title={apiUp ? "API подключён" : "Офлайн-режим"} />
       <label className="search"><Search /><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Найти событие, компанию или город" /></label>
-      {apiUp && <button className={walletAddress ? "wallet-button connected" : "wallet-button"} onClick={onConnectWallet}><WalletCards /> {walletAddress ? shortWallet(walletAddress) : "Connect Phantom"}</button>}
+      {apiUp && (loggedIn ? <button className={walletAddress ? "wallet-button connected" : "wallet-button"} onClick={onConnectWallet}><WalletCards /> {walletAddress ? shortWallet(walletAddress) : "Connect Phantom"}</button> : <button className="wallet-button login-button" onClick={onAccount}>Войти</button>)}
       <button className="icon-button" aria-label="Настройки"><Settings /></button>
-      <button className="profile"><span>{initials}</span><span className="profile-copy"><strong>{display}</strong><small>{roleLabels[role]}</small></span><ChevronDown /></button>
+      <button className="profile" onClick={onAccount} aria-label={loggedIn ? "Открыть кабинет" : "Войти или зарегистрироваться"}><span>{initials}</span><span className="profile-copy"><strong>{display}</strong><small>{roleLabels[role]}</small></span><ChevronDown /></button>
     </header>
   );
 }
@@ -1026,45 +1034,83 @@ function loadPersisted(): Persisted {
   }
 }
 
-export type AuthArgs = { mode: "register" | "login"; name: string; email: string; password: string };
+export type AuthArgs = { mode: "register" | "login"; name: string; email: string; password: string; passwordConfirmation: string };
 
-function AuthModal({ apiUp, onSubmit, onClose }: { apiUp: boolean; onSubmit: (a: AuthArgs) => Promise<void>; onClose: () => void }) {
+function AuthModal({ apiUp, eventTitle, full, onSubmit, onContinue, onClose }: {
+  apiUp: boolean;
+  eventTitle?: string;
+  full?: boolean;
+  onSubmit: (a: AuthArgs) => Promise<"ticket" | "complete">;
+  onContinue: () => Promise<void>;
+  onClose: () => void;
+}) {
   const [mode, setMode] = useState<"register" | "login">("register");
+  const [step, setStep] = useState<"account" | "ticket">("account");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [passwordConfirmation, setPasswordConfirmation] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const submit = async () => {
     setError("");
-    if (mode === "register" && name.trim().length < 2) { setError("Введите имя"); return; }
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) { setError("Введите корректный email"); return; }
-    if (apiUp && password.length < 6) { setError("Пароль — минимум 6 символов"); return; }
+    if (mode === "register" && (name.trim().length < 2 || name.trim().length > 80)) { setError("Укажите имя от 2 до 80 символов"); return; }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim()) || email.trim().length > 254) { setError("Укажите корректный email"); return; }
+    if (apiUp && mode === "register" && password.length < 8) { setError("Пароль должен содержать не менее 8 символов"); return; }
+    if (apiUp && mode === "register" && new TextEncoder().encode(password).length > 72) { setError("Пароль слишком длинный"); return; }
+    if (apiUp && mode === "register" && password !== passwordConfirmation) { setError("Пароли не совпадают"); return; }
+    if (apiUp && mode === "login" && !password) { setError("Введите пароль"); return; }
     setBusy(true);
     try {
-      await onSubmit({ mode, name: name.trim(), email: email.trim(), password });
+      const result = await onSubmit({ mode, name: name.trim(), email: email.trim().toLowerCase(), password, passwordConfirmation });
+      if (result === "ticket") setStep("ticket");
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Ошибка входа");
+      setError(e instanceof Error ? e.message : "Не удалось войти. Попробуйте ещё раз.");
+    } finally {
+      setBusy(false);
+    }
+  };
+  const continueToTicket = async () => {
+    setError("");
+    setBusy(true);
+    try {
+      await onContinue();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Не удалось оформить билет. Попробуйте ещё раз.");
     } finally {
       setBusy(false);
     }
   };
   return (
-    <div className="modal-scrim" onClick={onClose}>
-      <div className="modal-card" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="Вход и регистрация">
-        <h2>{mode === "register" ? "Регистрация" : "Вход"}</h2>
-        <p>{apiUp ? "Аккаунт на сервере Evently. Билет будет именным." : "Офлайн-режим: билет сохранится на этом устройстве."}</p>
-        {apiUp && (
-          <div className="role-switch auth-tabs" role="group" aria-label="Режим">
-            <button className={mode === "register" ? "active" : ""} onClick={() => setMode("register")}>Регистрация</button>
-            <button className={mode === "login" ? "active" : ""} onClick={() => setMode("login")}>Вход</button>
-          </div>
+    <div className="modal-scrim" onClick={() => { if (!busy) onClose(); }}>
+      <div className="modal-card auth-modal" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="auth-title">
+        <button className="auth-close" type="button" onClick={onClose} disabled={busy} aria-label="Закрыть"><X /></button>
+        <div className="auth-kicker"><span><Ticket /></span> EVENTLY PASS <i /> {step === "ticket" ? "02 / 02" : eventTitle ? "01 / 02" : "АККАУНТ"}</div>
+        {eventTitle && <div className="auth-event"><small>ВАШЕ СОБЫТИЕ</small><strong>{eventTitle}</strong></div>}
+        {step === "ticket" ? (
+          <>
+            <h2 id="auth-title">Вы в Evently.<br />Остался билет.</h2>
+            <p>{full ? "Места закончились. Добавим вас в лист ожидания и сообщим, когда освободится место." : "Подключите Phantom в сети Solana Devnet. Кошелёк подпишет выпуск вашего именного билета."}</p>
+            {!full && <div className="auth-wallet-note"><WalletCards /><span>Понадобится немного тестового SOL для комиссии сети. Реальные деньги не списываются.</span></div>}
+            {error && <p className="msg-err" role="alert">{error}</p>}
+            <div className="auth-actions"><button className="primary" type="button" disabled={busy} onClick={continueToTicket}>{busy ? "Подождите…" : full ? "Встать в лист ожидания" : "Продолжить с Phantom"}<ArrowRight /></button><button className="auth-later" type="button" onClick={onClose}>Сделаю это позже</button></div>
+          </>
+        ) : (
+          <>
+            <h2 id="auth-title">{!apiUp ? eventTitle ? "Демо-билет" : "Демо-профиль" : mode === "register" ? "Сначала знакомство." : "С возвращением."}</h2>
+            <p>{!apiUp ? eventTitle ? "Сейчас сервер недоступен. Демо-билет сохранится только в этом браузере." : "Сейчас сервер недоступен. Профиль сохранится только в этом браузере." : mode === "register" ? "Создайте аккаунт, чтобы сохранить свои события и получить именной билет." : "Войдите, чтобы продолжить оформление билета."}</p>
+            {apiUp && <div className="auth-tabs" role="group" aria-label="Режим"><button type="button" className={mode === "register" ? "active" : ""} onClick={() => { setMode("register"); setError(""); }}>Создать аккаунт</button><button type="button" className={mode === "login" ? "active" : ""} onClick={() => { setMode("login"); setError(""); }}>Уже есть аккаунт</button></div>}
+            <form onSubmit={(e) => { e.preventDefault(); void submit(); }} noValidate>
+              {mode === "register" && <label>Ваше имя<input value={name} onChange={(e) => { setName(e.target.value); setError(""); }} placeholder="Как к вам обращаться" autoComplete="name" maxLength={80} autoFocus /></label>}
+              <label>Email<input type="email" value={email} onChange={(e) => { setEmail(e.target.value); setError(""); }} placeholder="you@example.com" inputMode="email" autoComplete="email" maxLength={254} /></label>
+              {apiUp && <label>Пароль<span className="auth-password"><input type={showPassword ? "text" : "password"} value={password} onChange={(e) => { setPassword(e.target.value); setError(""); }} placeholder={mode === "register" ? "От 8 символов" : "Ваш пароль"} autoComplete={mode === "register" ? "new-password" : "current-password"} /><button type="button" onClick={() => setShowPassword((value) => !value)} aria-label={showPassword ? "Скрыть пароль" : "Показать пароль"}><Eye /> {showPassword ? "Скрыть" : "Показать"}</button></span></label>}
+              {apiUp && mode === "register" && <label>Повторите пароль<input type={showPassword ? "text" : "password"} value={passwordConfirmation} onChange={(e) => { setPasswordConfirmation(e.target.value); setError(""); }} placeholder="Тот же пароль ещё раз" autoComplete="new-password" /></label>}
+              {error && <p className="msg-err" role="alert">{error}</p>}
+              <button className="primary auth-submit" type="submit" disabled={busy}>{busy ? "Подождите…" : !apiUp ? eventTitle ? "Сохранить демо-билет" : "Сохранить профиль" : mode === "register" ? "Создать аккаунт" : "Войти"}<ArrowRight /></button>
+            </form>
+          </>
         )}
-        {mode === "register" && <label>Имя<input value={name} onChange={(e) => setName(e.target.value)} placeholder="Как вас зовут" /></label>}
-        <label>Email<input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@mail.com" inputMode="email" /></label>
-        {apiUp && <label>Пароль<input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Минимум 6 символов" /></label>}
-        {error && <p className="msg-err">{error}</p>}
-        <div className="form-actions"><button className="secondary" onClick={onClose}>Отмена</button><button className="primary" disabled={busy} onClick={submit}><Ticket /> {mode === "register" ? "Получить билет" : "Войти"}</button></div>
       </div>
     </div>
   );
@@ -1191,6 +1237,7 @@ export default function Home() {
     role === "visitor"
       ? visible.find((e) => e.id === selectedId) ?? visible[0]
       : events.find((e) => e.id === selectedId) ?? visible[0] ?? events[0];
+  const pendingEvent = pendingId === null || pendingId === 0 ? undefined : events.find((item) => item.id === pendingId);
 
   const patch = (p: Partial<Persisted>) => setPersisted((s) => ({ ...s, ...p }));
 
@@ -1266,7 +1313,7 @@ export default function Home() {
     else doRegisterLocal(id);
   };
 
-  const submitAuth = async ({ mode, name, email, password }: AuthArgs) => {
+  const submitAuth = async ({ mode, name, email, password, passwordConfirmation }: AuthArgs): Promise<"ticket" | "complete"> => {
     if (!online) {
       // Офлайн: локальный именной профиль.
       const profile = { name, email };
@@ -1282,40 +1329,50 @@ export default function Home() {
             patch({ profile, regs: { ...localRegs, [key]: { code: genCode(id), used: false } } });
             setView("tickets");
           }
-          return;
+          return "complete";
         }
       }
       patch({ profile });
-      return;
+      return "complete";
     }
-    const t = mode === "login" ? await Auth.login(email, password) : await Auth.register(name, email, password);
+    const t = mode === "login" ? await Auth.login(email, password) : await Auth.register(name, email, password, passwordConfirmation);
     setServerUser(t.user);
     setWalletAddress(t.user.wallet_address ?? null);
-    const [tickets, favs, queued] = await Promise.all([Events.myTickets(), Events.myFavorites(), Events.myWaitlist()]);
+    const [tickets, favs, queued] = await Promise.allSettled([Events.myTickets(), Events.myFavorites(), Events.myWaitlist()]);
     const sr: Record<string, Reg> = {};
-    tickets.forEach((x) => {
-      sr[String(x.event_id)] = serverTicketToReg(x);
-    });
+    if (tickets.status === "fulfilled") tickets.value.forEach((x) => { sr[String(x.event_id)] = serverTicketToReg(x); });
     setServerRegs(sr);
-    setServerFavs(favs);
-    setServerWaitlist(Object.fromEntries(queued.map((entry) => [String(entry.event_id), { regId: entry.registration_id, position: entry.position }])));
+    setServerFavs(favs.status === "fulfilled" ? favs.value : []);
+    setServerWaitlist(queued.status === "fulfilled" ? Object.fromEntries(queued.value.map((entry) => [String(entry.event_id), { regId: entry.registration_id, position: entry.position }])) : {});
     await refreshServerEvents();
     if (t.user.role === "admin") {
       try {
         setOverview(await Events.overview());
       } catch { /* ignore */ }
     }
-    if (pendingId !== null) {
-      const id = pendingId;
+    if (pendingId !== null && pendingId !== 0) return "ticket";
+    setPendingId(null);
+    setView("cabinet");
+    return "complete";
+  };
+
+  const continueRegistration = async () => {
+    const id = pendingId;
+    if (id === null || id === 0) return;
+    const event = events.find((item) => item.id === id);
+    if (!event) throw new Error("Событие больше не доступно. Обновите страницу.");
+    if (serverRegs[String(id)]) {
       setPendingId(null);
-      try {
-        const event = events.find((item) => item.id === id);
-        if (event && occupied(event, sr, true) >= event.capacity) await joinWaitlistOnline(id);
-        else await registerOnline(id);
-      } catch (error) {
-        setMessage(error instanceof Error ? error.message : "Не удалось зарегистрироваться");
-      }
+      setView("tickets");
+      return;
     }
+    if (serverWaitlist[String(id)]) {
+      setPendingId(null);
+      return;
+    }
+    if (occupied(event, serverRegs, true) >= event.capacity) await joinWaitlistOnline(id);
+    else await registerOnline(id);
+    setPendingId(null);
   };
 
   const logout = () => {
@@ -1532,8 +1589,9 @@ export default function Home() {
       <Sidebar view={view} setView={setView} open={menuOpen} close={() => setMenuOpen(false)} role={role} setRole={(r) => patch({ role: r })} ticketCount={Object.keys(regs).length} loggedIn={serverUser !== null} />
       {menuOpen && <button className="scrim" onClick={() => setMenuOpen(false)} aria-label="Закрыть меню" />}
       <div className="main-shell">
-        <Topbar onMenu={() => setMenuOpen(true)} query={query} setQuery={setQuery} role={role} profile={displayProfile} apiUp={online} walletAddress={walletAddress} onConnectWallet={connectWallet} />
-        {pendingId !== null && <AuthModal apiUp={online} onSubmit={submitAuth} onClose={() => setPendingId(null)} />}
+        <Topbar onMenu={() => setMenuOpen(true)} query={query} setQuery={setQuery} role={role} profile={displayProfile} apiUp={online} walletAddress={walletAddress} onConnectWallet={connectWallet} loggedIn={serverUser !== null} onAccount={() => serverUser ? setView("cabinet") : setPendingId(0)} />
+        {pendingId !== null && <AuthModal apiUp={online} eventTitle={pendingEvent?.title} full={pendingEvent ? occupied(pendingEvent, regs, online) >= pendingEvent.capacity : false} onSubmit={submitAuth} onContinue={continueRegistration} onClose={() => setPendingId(null)} />}
+        {message && view !== "checkin" && <div className="app-notice" role="status"><span>{message}</span><button onClick={() => setMessage("")} aria-label="Закрыть уведомление"><X /></button></div>}
         {view === "discover" && selected && (
           <Discover list={visible} selected={selected} setSelected={(e) => setSelectedId(e.id)} regs={regs} register={register} favorites={favorites} toggleFav={toggleFav} online={online} waitlist={waitlist} leaveWaitlist={leaveWaitlist} />
         )}

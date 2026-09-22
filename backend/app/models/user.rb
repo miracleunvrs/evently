@@ -6,7 +6,9 @@ class User < ApplicationRecord
   has_many :tickets, through: :registrations
   has_many :favorites, dependent: :destroy
 
-  validates :email, presence: true, uniqueness: { case_sensitive: false }
+  validates :name, presence: true, length: { in: 2..80 }
+  validates :email, presence: true, length: { maximum: 254 }, format: { with: URI::MailTo::EMAIL_REGEXP }, uniqueness: { case_sensitive: false }
+  validates :password_hash, presence: true
   validates :role, inclusion: { in: ROLES }
 
   def password=(raw)

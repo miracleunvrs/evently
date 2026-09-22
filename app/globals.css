@@ -142,4 +142,41 @@ svg { width:19px; height:19px; stroke-width:1.8; }
 .api-dot.on{background:#1e9c6a;box-shadow:0 0 0 4px #1e9c6a22}
 .api-note{margin:14px 4px 10px;padding:9px;text-align:center;background:#27252d;border-radius:10px;color:var(--lime);font-size:12px;font-weight:800}
 .auth-tabs{margin:0 0 14px}
+
+.auth-modal{position:relative;width:min(500px,100%);max-height:min(92vh,780px);overflow:auto;padding:34px;border:1px solid #e6e1d9;border-radius:22px;background:#faf9f5;box-shadow:0 34px 100px #17131f55}
+.auth-close{position:absolute;top:20px;right:20px;width:34px;height:34px;display:grid;place-items:center;border:1px solid var(--line);border-radius:50%;background:#fff}
+.auth-close svg{width:17px;height:17px}
+.auth-kicker{display:flex;align-items:center;gap:8px;margin-bottom:26px;color:#5a4fb0;font-size:10px;font-weight:900;letter-spacing:.13em}
+.auth-kicker span{width:28px;height:28px;display:grid;place-items:center;border-radius:8px;background:var(--lime);color:var(--ink)}
+.auth-kicker span svg{width:16px;height:16px}
+.auth-kicker i{width:4px;height:4px;margin:0 3px;border-radius:50%;background:#aaa3b4}
+.auth-event{display:grid;gap:5px;margin-bottom:22px;padding:14px 17px;border:1px solid #e1dccf;border-radius:12px;background:#fff}
+.auth-event small{color:#8b8490;font-size:10px;font-weight:900;letter-spacing:.12em}
+.auth-event strong{font-size:14px;line-height:1.3}
+.auth-modal h2{max-width:380px;font-size:clamp(30px,5vw,42px);line-height:1.02;letter-spacing:-.055em}
+.auth-modal>p{max-width:390px;margin:13px 0 22px;color:#655f6a;font-size:14px;line-height:1.55}
+.auth-tabs{display:grid;grid-template-columns:1fr 1fr;gap:4px;margin:0 0 21px;padding:4px;border:1px solid #e8e3da;border-radius:11px;background:#eeebe4}
+.auth-tabs button{min-height:38px;padding:6px;border:0;border-radius:8px;background:transparent;color:#6d6673;font-size:12px;font-weight:800}
+.auth-tabs button.active{background:#fff;color:var(--ink);box-shadow:0 2px 6px #211b2914}
+.auth-modal label{margin-bottom:15px;color:#4a454e;font-size:11px;letter-spacing:.08em}
+.auth-modal input{width:100%;height:48px;border-color:#ded9d0;background:#fff;font-size:14px}
+.auth-modal input:focus{border-color:var(--violet);outline:2px solid #5638ef25;outline-offset:0}
+.auth-password{position:relative;display:block}
+.auth-password input{padding-right:100px}
+.auth-password button{position:absolute;top:50%;right:8px;transform:translateY(-50%);display:flex;align-items:center;gap:5px;padding:6px;border:0;background:transparent;color:#6c6276;font-size:11px;font-weight:800}
+.auth-password button svg{width:15px;height:15px}
+.auth-modal .msg-err{margin:0 0 14px;font-size:13px;line-height:1.4}
+.auth-submit,.auth-actions .primary{width:100%;height:49px;justify-content:space-between;padding:0 18px;border-radius:10px;font-size:14px}
+.auth-submit{margin-top:8px}
+.auth-submit svg,.auth-actions .primary svg{width:17px;height:17px}
+.auth-wallet-note{display:flex;align-items:flex-start;gap:11px;margin:20px 0;padding:15px;border-radius:12px;background:#e9e5ff;color:#443398;font-size:12px;line-height:1.45}
+.auth-wallet-note svg{flex:0 0 18px;width:18px;height:18px}
+.auth-actions{display:grid;gap:10px;margin-top:16px}
+.auth-later{height:38px;border:0;background:transparent;color:#6c6571;font-size:12px;font-weight:800}
+.login-button{min-width:75px;justify-content:center}
+.app-notice{position:fixed;right:22px;bottom:22px;z-index:45;max-width:min(420px,calc(100vw - 44px));display:flex;align-items:center;gap:14px;padding:14px 15px;border:1px solid #dcd4f6;border-radius:12px;background:#fff;box-shadow:0 12px 40px #17131f20;font-size:13px;font-weight:700}
+.app-notice button{width:22px;height:22px;flex:0 0 22px;display:grid;place-items:center;border:0;background:transparent}
+.app-notice button svg{width:16px;height:16px}
+@media(max-width:520px){.auth-modal{padding:25px 20px}.auth-close{top:16px;right:16px}.auth-kicker{margin-bottom:20px}.auth-modal h2{font-size:34px}}
+@media(max-width:700px){.login-button{width:auto;min-width:69px;padding:0 10px;font-size:12px}}
 .profile-value{display:block;margin-top:7px;font-size:14px;font-weight:700;text-transform:none;letter-spacing:0;color:var(--ink)}

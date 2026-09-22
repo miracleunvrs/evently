@@ -52,9 +52,11 @@ export type ServerWaitlist = {
 
 export class ApiError extends Error {
   status: number;
-  constructor(status: number, message: string) {
+  code?: string;
+  constructor(status: number, message: string, code?: string) {
     super(message);
     this.status = status;
+    this.code = code;
   }
 }
 
@@ -110,11 +112,13 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   const r = await apiFetch(path, init);
   if (!r.ok) {
     let message = `HTTP ${r.status}`;
+    let code: string | undefined;
     try {
-      const body = (await r.json()) as { detail?: unknown };
+      const body = (await r.json()) as { detail?: unknown; code?: unknown };
       message = typeof body.detail === "string" ? body.detail : message;
+      code = typeof body.code === "string" ? body.code : undefined;
     } catch { /* ignore */ }
-    throw new ApiError(r.status, typeof message === "string" ? message : `HTTP ${r.status}`);
+    throw new ApiError(r.status, typeof message === "string" ? message : `HTTP ${r.status}`, code);
   }
   if (r.status === 204) return undefined as T;
   return (await r.json()) as T;
@@ -130,10 +134,10 @@ export async function health(): Promise<boolean> {
 }
 
 export const Auth = {
-  async register(name: string, email: string, password: string) {
+  async register(name: string, email: string, password: string, password_confirmation: string) {
     const t = await api<Tokens & { user: ApiUser }>("/auth/register", {
       method: "POST",
-      body: JSON.stringify({ name, email, password }),
+      body: JSON.stringify({ name, email, password, password_confirmation }),
     });
     saveTokens(t);
     return t;
