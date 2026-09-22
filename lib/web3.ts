@@ -1,28 +1,9 @@
-import {
-  Connection,
-  Keypair,
-  PublicKey,
-  SystemProgram,
-  Transaction,
-  TransactionInstruction,
-} from "@solana/web3.js";
-import {
-  AuthorityType,
-  ExtensionType,
-  TOKEN_2022_PROGRAM_ID,
-  createAssociatedTokenAccountIdempotentInstruction,
-  createInitializeMintInstruction,
-  createInitializeNonTransferableMintInstruction,
-  createMintToInstruction,
-  createSetAuthorityInstruction,
-  getAssociatedTokenAddressSync,
-  getMintLen,
-} from "@solana/spl-token";
+import type { PublicKey, Transaction } from "@solana/web3.js";
 import { Buffer } from "buffer";
 import { Wallet } from "./api";
 
 const RPC_URL = process.env.NEXT_PUBLIC_SOLANA_RPC_URL || "https://api.devnet.solana.com";
-const MEMO_PROGRAM = new PublicKey("MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr");
+const MEMO_PROGRAM_ADDRESS = "MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr";
 
 type PhantomProvider = {
   isPhantom?: boolean;
@@ -66,6 +47,14 @@ export async function connectAndVerifyWallet() {
 }
 
 export async function mintNonTransferableTicket(eventId: number, registrationId: number, expectedWallet: string) {
+  const [web3, token] = await Promise.all([import("@solana/web3.js"), import("@solana/spl-token")]);
+  const { Connection, Keypair, PublicKey, SystemProgram, Transaction, TransactionInstruction } = web3;
+  const {
+    AuthorityType, ExtensionType, TOKEN_2022_PROGRAM_ID,
+    createAssociatedTokenAccountIdempotentInstruction, createInitializeMintInstruction,
+    createInitializeNonTransferableMintInstruction, createMintToInstruction,
+    createSetAuthorityInstruction, getAssociatedTokenAddressSync, getMintLen,
+  } = token;
   const phantom = provider();
   const { publicKey: owner } = await phantom.connect();
   if (owner.toBase58() !== expectedWallet) throw new Error("В Phantom подключён другой кошелёк");
@@ -84,7 +73,7 @@ export async function mintNonTransferableTicket(eventId: number, registrationId:
     createSetAuthorityInstruction(mint.publicKey, owner, AuthorityType.MintTokens, null, [], TOKEN_2022_PROGRAM_ID),
     new TransactionInstruction({
       keys: [{ pubkey: owner, isSigner: true, isWritable: false }, { pubkey: mint.publicKey, isSigner: false, isWritable: false }],
-      programId: MEMO_PROGRAM,
+      programId: new PublicKey(MEMO_PROGRAM_ADDRESS),
       data: Buffer.from(`evently:v1:${eventId}:${registrationId}`, "utf8"),
     }),
   );
@@ -98,6 +87,7 @@ export async function mintNonTransferableTicket(eventId: number, registrationId:
 }
 
 export async function createCheckInProof(memo: string, expectedWallet: string) {
+  const { Connection, PublicKey, Transaction, TransactionInstruction } = await import("@solana/web3.js");
   const phantom = provider();
   const { publicKey: organizer } = await phantom.connect();
   if (organizer.toBase58() !== expectedWallet) throw new Error("В Phantom подключён другой кошелёк организатора");
@@ -107,7 +97,7 @@ export async function createCheckInProof(memo: string, expectedWallet: string) {
   const transaction = new Transaction().add(
     new TransactionInstruction({
       keys: [ { pubkey: organizer, isSigner: true, isWritable: false } ],
-      programId: MEMO_PROGRAM,
+      programId: new PublicKey(MEMO_PROGRAM_ADDRESS),
       data: Buffer.from(memo, "utf8"),
     }),
   );

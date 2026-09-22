@@ -44,6 +44,10 @@ React / Vinext PWA ─────── Ruby on Rails API ───────
 6. The ticket page shows its QR code, wallet, mint and a Solana Explorer link.
 7. At check-in, the organizer signs a ticket-specific memo transaction in Phantom. Rails verifies that receipt and the guest's on-chain ownership, then atomically changes the ticket from `active` to `used`. Duplicate entry is rejected and logged.
 
+## Account registration
+
+Guests can create an account from the header or while getting a ticket. The form checks name, email, an 8-character minimum password and matching confirmation; Rails repeats those checks and rejects duplicate addresses. After signing in from an event, the next step explains the Phantom transaction before issuing the ticket. Email ownership verification is not configured yet.
+
 ## Local setup
 
 Requirements: Docker, Node.js `>=22.13`, Phantom Wallet configured for Devnet, and a small amount of Devnet SOL from a faucet for mint rent and fees.
@@ -109,6 +113,10 @@ Evently — платформа мероприятий с проверяемым�
 PostgreSQL остаётся основной базой продукта. В ней хранятся пользователи, события, вместимость, очередь, аналитика и check-in. В Solana записывается только проверяемая часть билета: выпуск уникального токена, адрес mint, кошелёк владельца и история транзакции.
 
 Каждый билет имеет supply `1` и расширение `NonTransferable`. В транзакции находится memo с ID события и регистрации. Rails подтверждает билет только после проверки транзакции, подписавшего кошелька, memo, программы Token-2022, supply и token account владельца через официальный Solana JSON-RPC.
+
+### Регистрация аккаунта
+
+Аккаунт можно создать через кнопку «Войти» или при оформлении билета. Форма проверяет имя, email, пароль от 8 символов и его повтор; Rails повторяет проверки и не допускает дублирования email. После входа из карточки события отдельный шаг объясняет подключение Phantom. Подтверждение владения email пока не настроено.
 
 ### Запуск
 
