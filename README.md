@@ -65,7 +65,17 @@ npm run dev
 - API health: `http://localhost:8000/health`
 - Solana RPC health: `http://localhost:8000/health/solana`
 - PostgreSQL: `localhost:5544`
-- Demo organizer: `orga@example.com` / `orga123`
+
+To create local-only visitor, organizer and admin accounts, run:
+
+```sh
+docker compose exec api bin/rails runner script/create_local_demo_accounts.rb
+docker compose exec api cat tmp/demo_accounts.txt
+```
+
+The command generates fresh passwords and saves them in an ignored local file. It refuses to run in production.
+
+The event catalog includes eight seeded events. Three original 3D covers live in `public/covers/`, with full-resolution artwork and generation notes in `artwork/covers/`. A new event gets a random cover from this collection unless the organizer selects or uploads another one; the saved cover stays fixed afterward.
 
 The frontend uses `NEXT_PUBLIC_API_URL` and `NEXT_PUBLIC_SOLANA_RPC_URL`. Rails uses `DATABASE_URL`, `JWT_SECRET`, `CORS_ORIGINS` and `SOLANA_RPC_URL`. Production values belong in environment variables; no wallet private key is required.
 
@@ -131,5 +141,7 @@ npm run dev
 ```
 
 После входа нажмите **Connect Phantom**, подтвердите подпись сообщения и выберите событие. Phantom покажет транзакцию выпуска билета. После подтверждения на странице билета появятся `Solana Verified`, адрес токена и ссылка на Solana Explorer. При check-in кошелёк организатора подписывает отдельную memo-транзакцию, поэтому факт использования также получает проверяемую запись в Devnet.
+
+Для локальных тестовых аккаунтов посетителя, организатора и администратора выполните `docker compose exec api bin/rails runner script/create_local_demo_accounts.rb`, затем `docker compose exec api cat tmp/demo_accounts.txt`. Пароли генерируются заново и не попадают в Git. В каталоге восемь демо-событий и три авторские 3D-обложки; новая обложка выбирается случайно один раз при создании события.
 
 Приватный ключ Phantom никогда не отправляется в Evently. Пользователь подписывает challenge и blockchain-транзакцию внутри кошелька.

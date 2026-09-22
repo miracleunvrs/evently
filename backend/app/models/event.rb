@@ -1,5 +1,12 @@
 class Event < ApplicationRecord
   STATUSES = %w[draft published hidden].freeze
+  COVER_URLS = %w[
+    /covers/01-future-work.jpg
+    /covers/02-after-dark.jpg
+    /covers/03-creative-play.jpg
+  ].freeze
+
+  before_validation :assign_random_cover, on: :create
 
   belongs_to :organizer, class_name: "User"
   belongs_to :category, optional: true
@@ -14,5 +21,11 @@ class Event < ApplicationRecord
 
   def occupied
     registrations.where(status: "confirmed").count
+  end
+
+  private
+
+  def assign_random_cover
+    self.cover_url = COVER_URLS.sample if cover_url.blank?
   end
 end
