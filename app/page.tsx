@@ -48,6 +48,7 @@ import {
   type ServerEvent,
   type ServerTicket,
 } from "../lib/api";
+import { EVENT_COVERS, coverForEventId, randomEventCover } from "../lib/event-covers";
 import { connectAndVerifyWallet, createCheckInProof, mintNonTransferableTicket, shortWallet } from "../lib/web3";
 
 type Role = "visitor" | "organizer" | "admin";
@@ -174,7 +175,7 @@ const seedEvents: SeedItem[] = [
     attendees: 184,
     capacity: 240,
     tone: "cobalt",
-    image: "/event-design.png",
+    image: "/covers/01-future-work.jpg",
     status: "published",
   },
   {
@@ -190,7 +191,7 @@ const seedEvents: SeedItem[] = [
     attendees: 76,
     capacity: 90,
     tone: "coral",
-    image: "/event-rooftop.png",
+    image: "/covers/02-after-dark.jpg",
     status: "published",
   },
   {
@@ -206,7 +207,7 @@ const seedEvents: SeedItem[] = [
     attendees: 129,
     capacity: 320,
     tone: "lime",
-    image: "/event-design.png",
+    image: "/covers/03-creative-play.jpg",
     status: "published",
   },
   {
@@ -222,8 +223,38 @@ const seedEvents: SeedItem[] = [
     attendees: 88,
     capacity: 120,
     tone: "cobalt",
-    image: "/event-rooftop.png",
+    image: "/covers/02-after-dark.jpg",
     status: "published",
+  },
+  {
+    id: 5, title: "Soft Signals: Design Night", company: "Forma Bureau",
+    dayOffset: 14, time: "19:00", place: "Aspan Gallery", city: "Алматы",
+    category: "Дизайн", access: "По регистрации", attendees: 42,
+    capacity: 160, tone: "lime", image: "/covers/03-creative-play.jpg", status: "published",
+  },
+  {
+    id: 6, title: "Night Shift: Electronic Sessions", company: "Northstar Collective",
+    dayOffset: 18, time: "21:00", place: "Plasma Hall", city: "Астана",
+    category: "Музыка", access: "По регистрации", attendees: 61,
+    capacity: 280, tone: "coral", image: "/covers/02-after-dark.jpg", status: "published",
+  },
+  {
+    id: 7, title: "Tomorrow Lab / Almaty", company: "Orbit Labs",
+    dayOffset: 22, time: "17:30", place: "Tech Garden", city: "Алматы",
+    category: "Наука", access: "По регистрации", attendees: 34,
+    capacity: 180, tone: "cobalt", image: "/covers/01-future-work.jpg", status: "published",
+  },
+  {
+    id: 8, title: "City Makers Meetup", company: "Urban Common",
+    dayOffset: 27, time: "18:00", place: "Creative Hub", city: "Шымкент",
+    category: "Нетворкинг", access: "По регистрации", attendees: 27,
+    capacity: 120, tone: "lime", image: "/covers/03-creative-play.jpg", status: "published",
+  },
+  {
+    id: 9, title: "New Forms Festival", company: "Forma Bureau",
+    dayOffset: 33, time: "15:00", place: "Art Station", city: "Астана",
+    category: "Дизайн", access: "По регистрации", attendees: 86,
+    capacity: 400, tone: "coral", image: "/covers/02-after-dark.jpg", status: "published",
   },
 ];
 
@@ -270,21 +301,11 @@ function mapServerEvent(e: ServerEvent, i: number): EventItem {
     attendees: e.occupied,
     capacity: e.capacity,
     tone: toneByCat[e.category ?? ""] ?? (i % 2 ? "coral" : "cobalt"),
-    image: e.cover_url || (i % 2 ? "/event-rooftop.png" : "/event-design.png"),
+    image: e.cover_url || coverForEventId(e.id),
     status: (e.status as EventItem["status"]) ?? "published",
     past: valid ? d.getTime() < Date.now() : false,
   };
 }
-
-// Обложки: фото, генеративные шаблоны (gen:*) в тонах референса, dataURL своих фото.
-const COVERS = [
-  { id: "/event-design.png", name: "Фото · Дизайн" },
-  { id: "/event-rooftop.png", name: "Фото · Руфтоп" },
-  { id: "gen:sun", name: "Солнце" },
-  { id: "gen:court", name: "Корт" },
-  { id: "gen:night", name: "Ночь" },
-  { id: "gen:paper", name: "Бумага" },
-];
 
 function CoverArt({ image, tone, detail, children }: { image: string; tone: string; detail?: boolean; children: ReactNode }) {
   const base = detail ? "detail-poster" : "event-art";
@@ -481,9 +502,9 @@ function Discover({
   return (
     <div className="page-grid">
       <section className="content discover">
-        <div className="eyebrow-row"><span>АЛМАТЫ / АСТАНА</span><span>БЛИЖАЙШИЕ СОБЫТИЯ</span></div>
+        <div className="eyebrow-row"><span>ГОРОДА КАЗАХСТАНА</span><span>АФИША СОБЫТИЙ</span></div>
         <div className="page-title-row">
-          <div><h1>Куда пойдём<br />на этой неделе?</h1><p>События от компаний, команд и людей, за которыми хочется следить.</p></div>
+          <div><h1>Куда пойдём<br />дальше?</h1><p>События от компаний, команд и людей, за которыми хочется следить.</p></div>
           <span className="title-sticker">CURATED<br />FOR YOU <Sparkles /></span>
         </div>
         <div className="filters">
@@ -698,7 +719,7 @@ function CreateView({ onCreate }: { onCreate: (e: EventItem) => void }) {
   const [date, setDate] = useState("12 октября · 19:00");
   const [category, setCategory] = useState(categories[0]);
   const [capacity, setCapacity] = useState(100);
-  const [cover, setCover] = useState(COVERS[2].id);
+  const [cover, setCover] = useState<string>(randomEventCover);
   const [coverError, setCoverError] = useState("");
   const uploadCover = (file: File | undefined) => {
     if (!file) return;
@@ -743,7 +764,7 @@ function CreateView({ onCreate }: { onCreate: (e: EventItem) => void }) {
         <div className="cover-picker">
           <span className="cover-label">Обложка карточки</span>
           <div className="cover-grid">
-            {COVERS.map((c) => (
+            {EVENT_COVERS.map((c) => (
               <button key={c.id} type="button" className={cover === c.id ? "active" : ""} onClick={() => setCover(c.id)} title={c.name}>
                 <CoverArt image={c.id} tone="cobalt"><span className="cover-name">{c.name}</span></CoverArt>
               </button>
