@@ -364,7 +364,6 @@ function Sidebar({
   open,
   close,
   role,
-  setRole,
   ticketCount,
   loggedIn,
 }: {
@@ -373,7 +372,6 @@ function Sidebar({
   open: boolean;
   close: () => void;
   role: Role;
-  setRole: (r: Role) => void;
   ticketCount: number;
   loggedIn: boolean;
 }) {
@@ -410,22 +408,12 @@ function Sidebar({
           </>
         )}
       </nav>
-      {loggedIn ? (
-        <div className="api-note">API · {roleLabels[role]}</div>
-      ) : (
-        <div className="role-switch" role="group" aria-label="Роль">
-          {(["visitor", "organizer", "admin"] as Role[]).map((r) => (
-            <button key={r} className={role === r ? "active" : ""} onClick={() => setRole(r)}>
-              {r === "visitor" ? "Гость" : r === "organizer" ? "Орг" : "Админ"}
-            </button>
-          ))}
-        </div>
-      )}
-      <div className="org-switcher">
+      <div className="api-note">{loggedIn ? roleLabels[role] : "Войдите в аккаунт"}</div>
+      {role !== "visitor" && <div className="org-switcher">
         <span className="org-avatar">OL</span>
         <span><strong>Orbit Labs</strong><small>12 организаторов</small></span>
         <ChevronDown />
-      </div>
+      </div>}
     </aside>
   );
 }
@@ -1023,7 +1011,6 @@ function AdminView({ events, regs, online, log, overview, toggleStatus }: { even
 }
 
 type Persisted = {
-  role: Role;
   profile: Profile | null;
   favorites: number[];
   regs: Record<string, Reg>;
@@ -1034,7 +1021,7 @@ type Persisted = {
   waitlist: Record<string, WaitEntry>;
 };
 
-const defaults: Persisted = { role: "visitor", profile: null, favorites: [], regs: {}, extra: [], statusOv: {}, log: [], guests: [], waitlist: {} };
+const defaults: Persisted = { profile: null, favorites: [], regs: {}, extra: [], statusOv: {}, log: [], guests: [], waitlist: {} };
 
 function loadPersisted(): Persisted {
   if (typeof window === "undefined") return defaults;
@@ -1125,6 +1112,7 @@ function AuthModal({ apiUp, eventTitle, full, onSubmit, onContinue, onClose }: {
             <form onSubmit={(e) => { e.preventDefault(); void submit(); }} noValidate>
               {mode === "register" && <label>Ваше имя<input value={name} onChange={(e) => { setName(e.target.value); setError(""); }} placeholder="Как к вам обращаться" autoComplete="name" maxLength={80} autoFocus /></label>}
               <label>Email<input type="email" value={email} onChange={(e) => { setEmail(e.target.value); setError(""); }} placeholder="you@example.com" inputMode="email" autoComplete="email" maxLength={254} /></label>
+              {apiUp && mode === "register" && <p className="auth-email-note">Email нужен для входа. Подтверждать его не требуется.</p>}
               {apiUp && <label>Пароль<span className="auth-password"><input type={showPassword ? "text" : "password"} value={password} onChange={(e) => { setPassword(e.target.value); setError(""); }} placeholder={mode === "register" ? "От 8 символов" : "Ваш пароль"} autoComplete={mode === "register" ? "new-password" : "current-password"} /><button type="button" onClick={() => setShowPassword((value) => !value)} aria-label={showPassword ? "Скрыть пароль" : "Показать пароль"}><Eye /> {showPassword ? "Скрыть" : "Показать"}</button></span></label>}
               {apiUp && mode === "register" && <label>Повторите пароль<input type={showPassword ? "text" : "password"} value={passwordConfirmation} onChange={(e) => { setPasswordConfirmation(e.target.value); setError(""); }} placeholder="Тот же пароль ещё раз" autoComplete="new-password" /></label>}
               {error && <p className="msg-err" role="alert">{error}</p>}
@@ -1158,9 +1146,9 @@ export default function Home() {
   const [serverFavs, setServerFavs] = useState<number[]>([]);
   const [overview, setOverview] = useState<{ events: number; users: number; registrations: number; visits: number } | null>(null);
 
-  const { role: localRole, favorites: localFavs, regs: localRegs, extra, statusOv, waitlist: localWaitlist } = persisted;
+  const { favorites: localFavs, regs: localRegs, extra, statusOv, waitlist: localWaitlist } = persisted;
   const online = apiUp;
-  const role = (serverUser?.role ?? localRole) as Role;
+  const role = (serverUser?.role ?? "visitor") as Role;
   const regs = serverUser ? serverRegs : localRegs;
   const waitlist = serverUser ? serverWaitlist : localWaitlist;
   const favorites = serverUser ? serverFavs : localFavs;
@@ -1374,6 +1362,7 @@ export default function Home() {
     if (pendingId !== null && pendingId !== 0) return "ticket";
     setPendingId(null);
     setView("cabinet");
+    if (mode === "register") setMessage("Аккаунт создан — вы вошли в Evently");
     return "complete";
   };
 
@@ -1398,6 +1387,7 @@ export default function Home() {
 
   const logout = () => {
     clearTokens();
+    setMessage("");
     setServerUser(null);
     setWalletAddress(null);
     setServerRegs({});
@@ -1607,7 +1597,7 @@ export default function Home() {
 
   return (
     <main className="app-shell">
-      <Sidebar view={view} setView={setView} open={menuOpen} close={() => setMenuOpen(false)} role={role} setRole={(r) => patch({ role: r })} ticketCount={Object.keys(regs).length} loggedIn={serverUser !== null} />
+      <Sidebar view={view} setView={setView} open={menuOpen} close={() => setMenuOpen(false)} role={role} ticketCount={Object.keys(regs).length} loggedIn={serverUser !== null} />
       {menuOpen && <button className="scrim" onClick={() => setMenuOpen(false)} aria-label="Закрыть меню" />}
       <div className="main-shell">
         <Topbar onMenu={() => setMenuOpen(true)} query={query} setQuery={setQuery} role={role} profile={displayProfile} apiUp={online} walletAddress={walletAddress} onConnectWallet={connectWallet} loggedIn={serverUser !== null} onAccount={() => serverUser ? setView("cabinet") : setPendingId(0)} />

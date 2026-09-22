@@ -1,13 +1,13 @@
 // Клиент Evently API. Токены — в localStorage (решение по грилю).
 // При недоступном API фронт работает на локальных данных (fallback).
 
-const DEFAULT_API_URL =
-  typeof process !== "undefined" && process.env.NODE_ENV === "production"
+// Vinext replaces NEXT_PUBLIC_* at build time. A typeof process guard must not
+// wrap it: browsers have no process global, so that guard forced the hosted app
+// to use localhost instead of the production API.
+export const API_URL = process.env.NEXT_PUBLIC_API_URL ||
+  (process.env.NODE_ENV === "production"
     ? "https://evently-api-production-1056.up.railway.app"
-    : "http://127.0.0.1:8000";
-
-export const API_URL =
-  (typeof process !== "undefined" && process.env.NEXT_PUBLIC_API_URL) || DEFAULT_API_URL;
+    : "http://127.0.0.1:8000");
 
 const TOKENS_KEY = "evently-tokens";
 
