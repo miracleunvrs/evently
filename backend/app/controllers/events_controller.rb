@@ -1,6 +1,6 @@
 class EventsController < ApplicationController
   before_action :authenticate!, except: %i[index show]
-  before_action :organizer!, only: :create
+  before_action :organizer!, only: %i[create managed]
 
   def index
     relation = Event.includes(:category).where(status: "published").order(id: :desc).limit(100)
@@ -9,6 +9,11 @@ class EventsController < ApplicationController
     relation = relation.where("events.city ILIKE ?", "%#{Event.sanitize_sql_like(params[:city].to_s)}%") if params[:city].present?
     relation = relation.joins(:category).where(categories: { title: params[:category] }) if params[:category].present?
     render json: relation.map { |event| event_json(event) }
+  end
+
+  def managed
+    relation = current_user.role == "admin" ? Event.all : current_user.events
+    render json: relation.includes(:category).order(id: :desc).map { |event| event_json(event).merge(visits: event.tickets.where(status: "used").count) }
   end
 
   def show
@@ -25,7 +30,7 @@ class EventsController < ApplicationController
     return unless current_user
     event = Event.find(params[:id])
     return render json: { detail: "not your event" }, status: :forbidden unless current_user.role == "admin" || event.organizer_id == current_user.id
-    event.update!(event_params)
+    event.with_lock { event.update!(event_params) }
     render json: event_json(event)
   end
 
@@ -38,9 +43,11 @@ class EventsController < ApplicationController
     Event.transaction do
       event = Event.lock.find(params[:id])
       raise ActiveRecord::RecordNotFound unless event.status == "published"
+      return render json: { detail: "event has ended" }, status: :conflict if event.ended?
       existing = event.registrations.find_by(user: current_user)
       if existing
         ticket = existing.ticket
+        ticket&.lock!
         raise ActiveRecord::RecordNotUnique unless ticket&.blockchain_status.in?(%w[pending failed])
       else
         return render json: { detail: "sold out" }, status: :conflict if event.occupied >= event.capacity
@@ -57,6 +64,8 @@ class EventsController < ApplicationController
     registration = nil
     Event.transaction do
       event = Event.lock.find(params[:id])
+      raise ActiveRecord::RecordNotFound unless event.status == "published"
+      return render json: { detail: "event has ended" }, status: :conflict if event.ended?
       return render json: { detail: "seats available" }, status: :conflict if event.occupied < event.capacity
       registration = event.registrations.create!(user: current_user, status: "waitlisted")
     end
@@ -68,13 +77,16 @@ class EventsController < ApplicationController
     return unless current_user
     registration = Registration.find(params[:id])
     return render json: { detail: "registration not found" }, status: :not_found unless registration.user_id == current_user.id || current_user.role == "admin"
-    return render json: { detail: "ticket already used" }, status: :conflict if registration.ticket&.status == "used"
 
     Registration.transaction do
       event = Event.lock.find(registration.event_id)
+      registration.reload
+      ticket = registration.ticket
+      ticket&.lock!
+      return render json: { detail: "ticket already used" }, status: :conflict if ticket&.status == "used"
       released = registration.status == "confirmed"
       registration.destroy!
-      next_registration = event.registrations.where(status: "waitlisted").order(:created_at, :id).lock.first if released
+      next_registration = event.registrations.where(status: "waitlisted").order(:created_at, :id).lock.first if released && !event.ended? && event.occupied < event.capacity
       if next_registration
         next_registration.update!(status: "confirmed")
         next_registration.create_ticket!(code: ticket_code(event.id), wallet_address: next_registration.user.wallet_address, blockchain_status: "pending")
@@ -93,7 +105,7 @@ class EventsController < ApplicationController
     return unless current_user
     event = Event.find(params[:id])
     return render json: { detail: "event not found" }, status: :not_found unless current_user.role == "admin" || event.organizer_id == current_user.id
-    render json: event.registrations.includes(:user).map { |registration| { name: registration.user.name, email: registration.user.email, status: registration.status, registered_at: registration.created_at } }
+    render json: event.registrations.includes(:user, :ticket).map { |registration| { name: registration.user.name, email: registration.user.email, status: registration.status, registered_at: registration.created_at, event_title: event.title, code: registration.ticket&.code, used: registration.ticket&.status == "used", blockchain_status: registration.ticket&.blockchain_status } }
   end
 
   def stats
