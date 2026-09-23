@@ -10,6 +10,7 @@ class TicketsController < ApplicationController
       status: ticket.status,
       event_id: event.id,
       event_title: event.title,
+      event: event.as_json(only: %i[id organizer_id title description city place starts_at capacity price status cover_url]).merge(category: event.category&.title, occupied: event.occupied),
       registration_id: registration.id,
       wallet_address: ticket.wallet_address,
       solana_signature: ticket.solana_signature,
@@ -39,12 +40,20 @@ class TicketsController < ApplicationController
     token_address = params.require(:token_address).to_s
     return render json: { detail: "invalid signature or token address" }, status: :unprocessable_entity unless signature.match?(/\A[1-9A-HJ-NP-Za-km-z]{64,128}\z/) && token_address.match?(/\A[1-9A-HJ-NP-Za-km-z]{32,44}\z/)
 
-    Solana::TicketVerifier.new(ticket).verify!(signature: signature, token_address: token_address)
-    ticket.update!(solana_signature: signature, token_address: token_address, blockchain_status: "confirmed", blockchain_error: nil)
-    render json: self.class.serialize(ticket)
-  rescue Solana::RpcError => error
-    ticket&.update!(blockchain_status: "failed", blockchain_error: error.message)
-    render json: { detail: error.message, blockchain_status: "failed" }, status: :unprocessable_entity
+    ticket.with_lock do
+      return render json: { detail: "ticket already used" }, status: :conflict if ticket.status == "used"
+      return render json: self.class.serialize(ticket) if ticket.blockchain_status == "confirmed" && ticket.solana_signature == signature && ticket.token_address == token_address
+      return render json: { detail: "ticket already confirmed" }, status: :conflict if ticket.blockchain_status == "confirmed"
+
+      begin
+        Solana::TicketVerifier.new(ticket).verify!(signature: signature, token_address: token_address)
+        ticket.update!(solana_signature: signature, token_address: token_address, blockchain_status: "confirmed", blockchain_error: nil)
+        render json: self.class.serialize(ticket)
+      rescue Solana::RpcError => error
+        ticket.update!(blockchain_status: "failed", blockchain_error: error.message)
+        render json: { detail: error.message, blockchain_status: "failed" }, status: :unprocessable_entity
+      end
+    end
   end
 
   def blockchain_status

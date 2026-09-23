@@ -1,4 +1,4 @@
-const CACHE = "evently-shell-v2";
+const CACHE = "evently-shell-v3";
 const SHELL = ["/", "/manifest.webmanifest", "/favicon.svg", "/icon-192.png"];
 
 self.addEventListener("install", (event) => {
@@ -20,6 +20,11 @@ self.addEventListener("fetch", (event) => {
   const { request } = event;
   if (request.method !== "GET") return;
 
+  const url = new URL(request.url);
+  // Never intercept API/auth responses or cache private account data.
+  if (url.origin !== self.location.origin) return;
+  if (request.mode !== "navigate" && !/\.(?:js|css|png|jpg|jpeg|svg|webp|woff2?|webmanifest)$/.test(url.pathname)) return;
+
   // Навигации (HTML): всегда сеть первой. Закэшированный HTML ссылается
   // на хэшированные ассеты прошлой сборки — отсюда 404 после деплоя.
   if (request.mode === "navigate") {
@@ -27,7 +32,7 @@ self.addEventListener("fetch", (event) => {
       fetch(request)
         .then((response) => {
           const clone = response.clone();
-          caches.open(CACHE).then((cache) => cache.put(request, clone));
+          caches.open(CACHE).then((cache) => response.ok && cache.put(request, clone));
           return response;
         })
         .catch(() => caches.match(request).then((cached) => cached || caches.match("/")))
@@ -43,7 +48,7 @@ self.addEventListener("fetch", (event) => {
           cached ||
           fetch(request).then((response) => {
             const clone = response.clone();
-            caches.open(CACHE).then((cache) => cache.put(request, clone));
+            caches.open(CACHE).then((cache) => response.ok && cache.put(request, clone));
             return response;
           })
       )
@@ -55,9 +60,9 @@ self.addEventListener("fetch", (event) => {
     fetch(request)
       .then((response) => {
         const clone = response.clone();
-        caches.open(CACHE).then((cache) => cache.put(request, clone));
+        caches.open(CACHE).then((cache) => response.ok && cache.put(request, clone));
         return response;
       })
-      .catch(() => caches.match(request).then((cached) => cached || caches.match("/")))
+      .catch(() => caches.match(request).then((cached) => cached || Response.error()))
   );
 });

@@ -27,6 +27,7 @@ export type ServerEvent = {
   price: number;
   status: string;
   cover_url: string;
+  visits?: number;
 };
 export type ServerTicket = {
   id: number;
@@ -34,6 +35,7 @@ export type ServerTicket = {
   status: string;
   event_id: number;
   event_title: string;
+  event: ServerEvent;
   registration_id: number;
   wallet_address: string | null;
   solana_signature: string | null;
@@ -87,7 +89,7 @@ async function refreshAccess(): Promise<string | null> {
     body: JSON.stringify({ refresh_token: t.refresh_token }),
   });
   if (!r.ok) {
-    clearTokens();
+    if (r.status === 401 || r.status === 403) clearTokens();
     return null;
   }
   const next = (await r.json()) as Tokens;
@@ -101,7 +103,7 @@ export async function apiFetch(path: string, init: RequestInit = {}, retry = tru
     ...init,
     headers: { "Content-Type": "application/json", ...(t ? { Authorization: `Bearer ${t.access_token}` } : {}), ...init.headers },
   });
-  if (r.status === 401 && t && retry) {
+  if (r.status === 401 && t && retry && !path.startsWith("/auth/login") && !path.startsWith("/auth/register")) {
     const access = await refreshAccess();
     if (access) return apiFetch(path, init, false);
   }
@@ -171,6 +173,12 @@ export const Wallet = {
 };
 
 export const Events = {
+  managed() {
+    return api<ServerEvent[]>("/me/events");
+  },
+  guests(id: number) {
+    return api<{ name: string; email: string; status: string; event_title: string; code: string | null; used: boolean; blockchain_status: string | null }[]>(`/events/${id}/guests`);
+  },
   list(params: { q?: string; category?: string; city?: string } = {}) {
     const qs = new URLSearchParams();
     if (params.q) qs.set("q", params.q);

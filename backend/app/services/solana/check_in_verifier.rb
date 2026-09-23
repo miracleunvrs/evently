@@ -14,8 +14,7 @@ module Solana
       signer_keys = keys.filter_map { |entry| entry.is_a?(Hash) && entry["signer"] ? entry["pubkey"] : nil }
       raise RpcError, "organizer wallet did not sign check-in" unless signer_keys.include?(@organizer.wallet_address)
 
-      logs = Array(transaction.dig("meta", "logMessages")).join("\n")
-      raise RpcError, "check-in memo does not match ticket" unless logs.include?(memo)
+      raise RpcError, "check-in memo does not match ticket" unless Memo.matches?(transaction, memo)
 
       true
     end

@@ -24,6 +24,7 @@ Rails.application.routes.draw do
   end
   delete "/registrations/:id", to: "events#cancel_registration"
 
+  get "/me/events", to: "events#managed"
   get "/me/tickets", to: "tickets#index"
   get "/me/waitlist", to: "events#my_waitlist"
   get "/me/favorites", to: "favorites#index"

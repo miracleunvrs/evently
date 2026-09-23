@@ -67,6 +67,10 @@ type View =
 type EventItem = {
   id: number;
   title: string;
+  description?: string;
+  organizerId?: number;
+  startsAt?: string;
+  visits?: number;
   company: string;
   date: string;
   day: string;
@@ -100,7 +104,7 @@ declare global { interface Document { modelContext?: { registerTool: (tool: WebM
 // Единый журнал проходов: label — код билета или имя из ручного списка.
 type CheckLog = { label: string; result: "ok" | "duplicate"; at: string };
 type Profile = { name: string; email: string };
-type GuestRow = { name: string; email: string; status: string };
+type GuestRow = { name: string; email: string; status: string; event_title?: string; code?: string | null; used?: boolean; blockchain_status?: string | null };
 
 function guestsToCSV(rows: GuestRow[]) {
   const esc = (v: string) => `"${v.replace(/"/g, '""')}"`;
@@ -288,6 +292,10 @@ function mapServerEvent(e: ServerEvent, i: number): EventItem {
   return {
     id: e.id,
     title: e.title,
+    description: e.description,
+    organizerId: e.organizer_id,
+    startsAt: e.starts_at,
+    visits: e.visits,
     company: "Evently",
     date: valid
       ? `${d.toLocaleDateString("ru-RU", { day: "numeric", month: "long" })} · ${d.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" })}`
@@ -392,7 +400,7 @@ function Sidebar({
         {item("cabinet", "Кабинет", User)}
         {(role === "organizer" || role === "admin") && (
           <>
-            <p className="nav-label">Orbit Labs</p>
+            <p className="nav-label">Организатору</p>
             {item("events", "События", CalendarDays)}
             {item("create", "Создать", Plus)}
             {item("studio", "Студия приглашений", Frame)}
@@ -410,8 +418,8 @@ function Sidebar({
       </nav>
       <div className="api-note">{loggedIn ? roleLabels[role] : "Войдите в аккаунт"}</div>
       {role !== "visitor" && <div className="org-switcher">
-        <span className="org-avatar">OL</span>
-        <span><strong>Orbit Labs</strong><small>12 организаторов</small></span>
+        <span className="org-avatar">E</span>
+        <span><strong>Evently</strong><small>{roleLabels[role]}</small></span>
         <ChevronDown />
       </div>}
     </aside>
@@ -545,8 +553,8 @@ function Discover({
         <div className="detail-content">
           <div className="tag-row"><span>{selected.category}</span><span>{selected.access}</span></div>
           <h2>{selected.title}</h2>
-          <p>Разговоры без скучных панелей, новые знакомства и идеи, которые хочется унести с собой.</p>
-          <dl><div><dt>Когда</dt><dd>{selected.date}</dd></div><div><dt>Где</dt><dd>{selected.place}<small>{selected.city}</small></dd></div><div><dt>Организатор</dt><dd>{selected.company}<small>Подтверждённая компания</small></dd></div></dl>
+          <p>{selected.description || "Подробности программы уточняйте у организатора."}</p>
+          <dl><div><dt>Когда</dt><dd>{selected.date}</dd></div><div><dt>Где</dt><dd>{selected.place}<small>{selected.city}</small></dd></div><div><dt>Организатор</dt><dd>{selected.company}<small>Организатор мероприятия</small></dd></div></dl>
           {reg && <p className="ticket-hint">Ваш билет: <b>{reg.code}</b>{reg.used ? " · уже использован" : ""}</p>}
           {waiting && <p className="wait-hint">Вы в листе ожидания под номером <b>{waiting.position}</b>. Когда освободится место, билет появится автоматически.</p>}
           <button className={`register-button ${reg || waiting ? "done" : ""}`} disabled={Boolean(waiting) || (!reg && selected.past)} onClick={() => register(selected.id)}>
@@ -595,7 +603,7 @@ async function downloadTicketPNG(event: EventItem, code: string, guest: string) 
   anchor.click();
 }
 
-function TicketView({ regs, events, profile, onCancel }: { regs: Record<string, Reg>; events: EventItem[]; profile: Profile | null; onCancel: (id: number) => void }) {
+function TicketView({ regs, events, profile, onCancel, onRetry, busy }: { onRetry: (id: number) => void; busy: boolean; regs: Record<string, Reg>; events: EventItem[]; profile: Profile | null; onCancel: (id: number) => void }) {
   const guest = profile?.name ?? "Гость";
   const mine = events.filter((e) => regs[String(e.id)]);
   if (mine.length === 0) {
@@ -622,7 +630,7 @@ function TicketView({ regs, events, profile, onCancel }: { regs: Record<string, 
                 <div className="ticket-qr-row"><RealQr code={reg.code} /></div>
                 <p>{reg.blockchainStatus === "confirmed" || reg.blockchainStatus === "used" ? "Solana Verified ✓ · непередаваемый Token-2022" : "Blockchain confirmation pending"}</p>
               </article>
-              <div className="ticket-actions"><h3>Билет готов</h3><p>Сохраните его на телефон или распечатайте. QR-код одинаковый во всех форматах.</p>{reg.wallet && <div className={reg.blockchainStatus === "confirmed" || reg.blockchainStatus === "used" ? "chain-proof" : "chain-proof pending"}><span><ShieldCheck /> {reg.blockchainStatus === "confirmed" || reg.blockchainStatus === "used" ? "Solana Verified" : "Solana Pending"}</span><small>Wallet · {shortWallet(reg.wallet)}</small>{reg.tokenAddress && <small>Token · {shortWallet(reg.tokenAddress)}</small>}{reg.explorerUrl && <a href={reg.explorerUrl} target="_blank" rel="noreferrer">View on Solana Explorer <ExternalLink /></a>}</div>}<button onClick={() => window.print()}><Download /> Скачать PDF</button><button onClick={() => downloadTicketPNG(event, reg.code, guest)}><ImagePlus /> Сохранить PNG</button><a className="ticket-mail" href={`mailto:${profile?.email ?? ""}?subject=${encodeURIComponent(`Билет: ${event.title}`)}&body=${encodeURIComponent(`Ваш билет ${reg.code} на «${event.title}» (${event.date}, ${event.place}, ${event.city}). Покажите QR-код на входе.`)}`}><Send /> Отправить на email</a><button onClick={() => onCancel(event.id)} disabled={reg.used}>{reg.used ? "Билет использован" : "Отменить регистрацию"}</button></div>
+              <div className="ticket-actions"><h3>{reg.blockchainStatus === "pending" || reg.blockchainStatus === "failed" ? "Подтвердите билет" : "Билет готов"}</h3>{(reg.blockchainStatus === "pending" || reg.blockchainStatus === "failed") && <><p>Место зарезервировано. Завершите подтверждение в Phantom, чтобы пройти на событие.</p><button disabled={busy} onClick={() => onRetry(event.id)}>{busy ? "Подтверждаем…" : "Подтвердить в Phantom"}</button></>}<p>Сохраните его на телефон или распечатайте. QR-код одинаковый во всех форматах.</p>{reg.wallet && <div className={reg.blockchainStatus === "confirmed" || reg.blockchainStatus === "used" ? "chain-proof" : "chain-proof pending"}><span><ShieldCheck /> {reg.blockchainStatus === "confirmed" || reg.blockchainStatus === "used" ? "Solana Verified" : "Solana Pending"}</span><small>Wallet · {shortWallet(reg.wallet)}</small>{reg.tokenAddress && <small>Token · {shortWallet(reg.tokenAddress)}</small>}{reg.explorerUrl && <a href={reg.explorerUrl} target="_blank" rel="noreferrer">View on Solana Explorer <ExternalLink /></a>}</div>}<button onClick={() => window.print()}><Download /> Скачать PDF</button><button onClick={() => downloadTicketPNG(event, reg.code, guest)}><ImagePlus /> Сохранить PNG</button><a className="ticket-mail" href={`mailto:${profile?.email ?? ""}?subject=${encodeURIComponent(`Билет: ${event.title}`)}&body=${encodeURIComponent(`Ваш билет ${reg.code} на «${event.title}» (${event.date}, ${event.place}, ${event.city}). Покажите QR-код на входе.`)}`}><Send /> Отправить на email</a><button onClick={() => onCancel(event.id)} disabled={reg.used}>{reg.used ? "Билет использован" : "Отменить регистрацию"}</button></div>
             </div>
           );
         })}
@@ -700,15 +708,17 @@ function CabinetView({
   );
 }
 
-function CreateView({ onCreate }: { onCreate: (e: EventItem) => void }) {
+function CreateView({ onCreate }: { onCreate: (e: EventItem) => Promise<void> }) {
   const [title, setTitle] = useState("Новый митап сообщества");
   const [city, setCity] = useState("Алматы");
   const [place, setPlace] = useState("Площадка уточняется");
-  const [date, setDate] = useState("12 октября · 19:00");
+  const [date, setDate] = useState(() => { const d = new Date(Date.now() + 86400000); return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16); });
   const [category, setCategory] = useState(categories[0]);
   const [capacity, setCapacity] = useState(100);
   const [cover, setCover] = useState<string>(randomEventCover);
   const [coverError, setCoverError] = useState("");
+  const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
   const uploadCover = (file: File | undefined) => {
     if (!file) return;
     setCoverError("");
@@ -716,13 +726,23 @@ function CreateView({ onCreate }: { onCreate: (e: EventItem) => void }) {
       .then(setCover)
       .catch(() => setCoverError("Не получилось прочитать файл"));
   };
-  const submit = () => {
-    onCreate({
+  const submit = async () => {
+    if (saving) return;
+    const start = new Date(date);
+    if (!title.trim() || !Number.isFinite(start.getTime()) || start.getTime() <= Date.now() || !Number.isInteger(capacity) || capacity < 1 || capacity > 5000) {
+      setError("Укажите название, будущую дату и целое число мест от 1 до 5000");
+      return;
+    }
+    setSaving(true);
+    setError("");
+    try {
+    await onCreate({
       id: Date.now(),
       title: title.trim() || "Без названия",
       company: "Orbit Labs",
-      date,
-      day: date.slice(0, 2),
+      date: start.toLocaleString("ru-RU"),
+      startsAt: start.toISOString(),
+      day: String(start.getDate()).padStart(2, "0"),
       month: "ОКТ",
       place,
       city,
@@ -735,6 +755,9 @@ function CreateView({ onCreate }: { onCreate: (e: EventItem) => void }) {
       status: "published",
       past: false,
     });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Не удалось сохранить событие");
+    } finally { setSaving(false); }
   };
   return (
     <section className="content data-page">
@@ -744,7 +767,7 @@ function CreateView({ onCreate }: { onCreate: (e: EventItem) => void }) {
         <div className="form-grid">
           <label>Название<input value={title} onChange={(e) => setTitle(e.target.value)} /></label>
           <label>Категория<select value={category} onChange={(e) => setCategory(e.target.value)}>{categories.map((c) => <option key={c}>{c}</option>)}</select></label>
-          <label>Дата и время<input value={date} onChange={(e) => setDate(e.target.value)} /></label>
+          <label>Дата и время<input type="datetime-local" value={date} onChange={(e) => setDate(e.target.value)} /></label>
           <label>Лимит мест<input type="number" min={1} max={5000} value={capacity} onChange={(e) => setCapacity(Number(e.target.value))} /></label>
           <label>Город<input value={city} onChange={(e) => setCity(e.target.value)} /></label>
           <label>Место<input value={place} onChange={(e) => setPlace(e.target.value)} /></label>
@@ -766,7 +789,7 @@ function CreateView({ onCreate }: { onCreate: (e: EventItem) => void }) {
           </div>
           {coverError && <p className="msg-err">{coverError}</p>}
         </div>
-        <div className="form-actions"><button className="primary" onClick={submit}><Plus /> Опубликовать</button></div>
+        <div className="form-actions">{error && <p className="msg-err" role="alert">{error}</p>}<button className="primary" disabled={saving} onClick={submit}><Plus /> {saving ? "Сохраняем…" : "Опубликовать"}</button></div>
       </div>
     </section>
   );
@@ -841,11 +864,11 @@ function Studio() {
 }
 
 function EventsView({ events, regs, online, go, toggleStatus }: { events: EventItem[]; regs: Record<string, Reg>; online: boolean; go: (v: View) => void; toggleStatus: (id: number) => void }) {
-  const myRegs = Object.values(regs).length;
-  const visits = Object.values(regs).filter((r) => r.used).length;
+  const myRegs = events.reduce((sum, event) => sum + event.attendees, 0);
+  const visits = events.reduce((sum, event) => sum + (event.visits ?? 0), 0);
   return (
     <section className="content data-page"><span className="section-kicker">ORBIT LABS / ПАНЕЛЬ</span><div className="data-heading"><div><h1>События</h1><p>Управляйте публикациями, регистрациями и программой.</p></div><button className="primary" onClick={() => go("create")}><Plus /> Создать</button></div>
-      <div className="metric-row"><article><small>СОБЫТИЯ</small><strong>{events.length}</strong><span>в каталоге</span></article><article><small>МОИ РЕГИСТРАЦИИ</small><strong>{myRegs}</strong><span>выданные билеты</span></article><article><small>ВИЗИТЫ</small><strong>{visits}</strong><span>отмечено на входе</span></article></div>
+      <div className="metric-row"><article><small>СОБЫТИЯ</small><strong>{events.length}</strong><span>в каталоге</span></article><article><small>РЕГИСТРАЦИИ</small><strong>{myRegs}</strong><span>выданные билеты</span></article><article><small>ВИЗИТЫ</small><strong>{visits}</strong><span>отмечено на входе</span></article></div>
       <div className="data-card"><div className="data-card-head"><span><CalendarDays /> Активные события</span><button>Все события <ArrowRight /></button></div>{events.map((event) => <div className="table-row" key={event.id}><span className={`tiny-art ${event.tone}`}>{event.day}</span><span><strong>{event.title}</strong><small>{event.date}</small></span><span><small>ГОСТИ</small>{occupied(event, regs, online)} / {event.capacity}</span><button className={`status-pill ${event.status !== "published" ? "muted" : ""}`} onClick={() => toggleStatus(event.id)}>{event.status === "published" ? "Опубликовано" : "Скрыто"}</button><button aria-label="Меню"><MoreHorizontal /></button></div>)}</div>
     </section>
   );
@@ -862,23 +885,23 @@ function initialsOf(name: string) {
   return name.split(/\s+/).map((w) => w[0]).join("").slice(0, 2).toUpperCase();
 }
 
-function GuestsView({ profile, guests, onImport }: { profile: Profile | null; guests: GuestRow[]; onImport: (list: GuestRow[]) => void }) {
+function GuestsView({ profile, guests, online, onImport }: { profile: Profile | null; guests: GuestRow[]; online: boolean; onImport: (list: GuestRow[]) => void }) {
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState("Все статусы");
   const rows = useMemo(() => {
     const me = profile ? [{ name: profile.name, email: profile.email, status: "Подтверждён" }] : [];
-    return [...me, ...guests, ...seededGuests].filter((g) => {
+    return (online ? guests : [...me, ...guests, ...seededGuests]).filter((g) => {
       if (status !== "Все статусы" && g.status !== status) return false;
       return `${g.name} ${g.email}`.toLowerCase().includes(query.toLowerCase());
     });
-  }, [query, profile, guests, status]);
+  }, [query, profile, guests, status, online]);
   const importFile = (file: File | undefined) => {
     if (!file) return;
     file.text().then((text) => onImport(parseCSV(text))).catch(() => undefined);
   };
-  return <section className="content data-page"><span className="section-kicker">ORBIT LABS / CRM</span><div className="data-heading"><div><h1>Гости</h1><p>Единый список приглашённых и статусы регистрации.</p></div><label className="primary import-label"><Plus /> Импорт CSV<input type="file" accept=".csv,text/csv,text/plain" hidden onChange={(e) => { importFile(e.target.files?.[0]); e.target.value = ""; }} /></label></div>
+  return <section className="content data-page"><span className="section-kicker">ORBIT LABS / CRM</span><div className="data-heading"><div><h1>Гости</h1><p>Единый список приглашённых и статусы регистрации.</p></div>{!online && <label className="primary import-label"><Plus /> Импорт CSV<input type="file" accept=".csv,text/csv,text/plain" hidden onChange={(e) => { importFile(e.target.files?.[0]); e.target.value = ""; }} /></label>}</div>
     <div className="guest-tools"><label><Search /><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Имя или email" /></label><select value={status} onChange={(e) => setStatus(e.target.value)} aria-label="Фильтр по статусу">{["Все статусы", "Подтверждён", "Приглашён", "Лист ожидания"].map((s) => <option key={s}>{s}</option>)}</select><button onClick={() => downloadCSV("evently-guests.csv", guestsToCSV(rows))}><Download /> Экспорт</button></div>
-    <div className="data-card guest-list"><div className="data-card-head"><span><Users /> {rows.length} гостя</span><button>Настроить поля <ArrowRight /></button></div>{rows.map((guest) => <div className="guest-row" key={guest.email}><span className="guest-avatar">{initialsOf(guest.name)}</span><span><strong>{guest.name}</strong><small>{guest.email}</small></span><span className={`guest-status ${guest.status === "Подтверждён" ? "ok" : ""}`}>{guest.status}</span><button aria-label="Меню гостя"><MoreHorizontal /></button></div>)}</div>
+    <div className="data-card guest-list"><div className="data-card-head"><span><Users /> {rows.length} гостя</span><button>Настроить поля <ArrowRight /></button></div>{rows.map((guest, index) => <div className="guest-row" key={`${guest.email}-${index}`}><span className="guest-avatar">{initialsOf(guest.name)}</span><span><strong>{guest.name}</strong><small>{guest.email}</small></span><span className={`guest-status ${guest.status === "Подтверждён" ? "ok" : ""}`}>{guest.status}</span><button aria-label="Меню гостя"><MoreHorizontal /></button></div>)}</div>
   </section>;
 }
 
@@ -934,7 +957,11 @@ function CheckinView({
   profile,
   checkIn,
   message,
+  guests,
+  online,
 }: {
+  guests: GuestRow[];
+  online: boolean;
   regs: Record<string, Reg>;
   events: EventItem[];
   log: CheckLog[];
@@ -946,22 +973,23 @@ function CheckinView({
   const [scannerOpen, setScannerOpen] = useState(false);
   const entered = (label: string) => log.some((l) => l.label === label && l.result === "ok");
   const myRows = events.filter((e) => regs[String(e.id)]);
-  const enteredCount = log.filter((l) => l.result === "ok").length;
-  const activeCodes = myRows.filter((e) => !regs[String(e.id)].used).length;
+  const enteredCount = online ? guests.filter((g) => g.used).length : log.filter((l) => l.result === "ok").length;
+  const activeCodes = online ? guests.filter((g) => g.code && !g.used && g.blockchain_status === "confirmed").length : myRows.filter((e) => !regs[String(e.id)].used).length;
   const myName = profile?.name ?? "Гость";
   const myInitials = myName.split(/\s+/).map((w) => w[0]).join("").slice(0, 2).toUpperCase();
   const history = [...log].slice(-6).reverse();
   return <section className="content data-page"><span className="section-kicker">FUTURE OF WORK / ВХОД</span><div className="data-heading"><div><h1>Check-in</h1><p>Код, список и сканер пишут в один журнал. Активных билетов: {activeCodes}.</p></div><span className="live-badge"><i /> Онлайн</span></div>
     <div className="verify-row"><label><ScanLine /><input value={code} onChange={(e) => setCode(e.target.value)} placeholder="Введите код билета, например EVT-1-AB12" /></label><button className="primary" onClick={() => checkIn(code)}>Проверить</button></div>
     {message && <p className={message.startsWith("Проход") ? "msg-ok" : "msg-err"}>{message}</p>}
-    <div className="checkin-grid"><article className="scanner-card"><div className="scanner-frame"><span /><QrCode /><b>Наведите камеру на QR</b></div><button className="primary" onClick={() => setScannerOpen(true)}><ScanLine /> Открыть сканер</button><p>Последняя синхронизация: только что</p></article>
+    <div className="checkin-grid"><article className="scanner-card"><div className="scanner-frame"><span /><QrCode /><b>Наведите камеру на QR</b></div><button className="primary" onClick={() => setScannerOpen(true)}><ScanLine /> Открыть сканер</button><p>Для проверки требуется интернет и Phantom</p></article>
     <article className="checkin-list"><div className="data-card-head"><span><Users /> На площадке</span><strong>{enteredCount}</strong></div>
-      {myRows.map((e) => {
+      {!online && myRows.map((e) => {
         const reg = regs[String(e.id)];
         const done = reg.used || entered(reg.code);
         return <button className="checkin-person" key={e.id} onClick={() => checkIn(reg.code)}><span className="guest-avatar">{myInitials}</span><span><strong>{myName} · {e.title}</strong><small>{reg.code}</small></span><span className={done ? "checked" : "pending"}>{done ? <><Check /> Вошёл</> : "Отметить"}</span></button>;
       })}
-      {seededGuests.map((guest) => {
+      {online && guests.filter((g) => g.code).map((guest) => <button className="checkin-person" key={guest.code} disabled={guest.used || guest.blockchain_status !== "confirmed"} onClick={() => checkIn(guest.code!)}><span className="guest-avatar">{initialsOf(guest.name)}</span><span><strong>{guest.name} · {guest.event_title}</strong><small>{guest.code}</small></span><span>{guest.used ? "Вошёл" : guest.blockchain_status === "confirmed" ? "Отметить" : "Ожидает подтверждения"}</span></button>)}
+      {!online && seededGuests.map((guest) => {
         const done = entered(guest.name);
         return <button className="checkin-person" key={guest.email} onClick={() => checkIn(guest.name)}><span className="guest-avatar">{guest.initials}</span><span><strong>{guest.name}</strong><small>{guest.email}</small></span><span className={done ? "checked" : "pending"}>{done ? <><Check /> Вошёл</> : "Отметить"}</span></button>;
       })}
@@ -971,18 +999,18 @@ function CheckinView({
   </section>;
 }
 
-function AnalyticsView({ events, regs }: { events: EventItem[]; regs: Record<string, Reg> }) {
-  const total = Object.keys(regs).length;
-  const active = Object.values(regs).filter((r) => !r.used).length;
-  const visits = total - active;
+function AnalyticsView({ events }: { events: EventItem[]; regs: Record<string, Reg> }) {
+  const total = events.reduce((sum, event) => sum + event.attendees, 0);
+  const visits = events.reduce((sum, event) => sum + (event.visits ?? 0), 0);
+  const active = total - visits;
   const funnel = [
     { label: "Регистрации", value: total, width: 100 },
     { label: "Активные билеты", value: active, width: total ? Math.round((active / total) * 100) : 0 },
     { label: "Визиты", value: visits, width: total ? Math.round((visits / total) * 100) : 0 },
   ];
-  return <section className="content data-page"><span className="section-kicker">ORBIT LABS / INSIGHTS</span><div className="data-heading"><div><h1>Аналитика</h1><p>Только реальные данные этого устройства. Событий: {events.length}.</p></div></div>
+  return <section className="content data-page"><span className="section-kicker">ORBIT LABS / INSIGHTS</span><div className="data-heading"><div><h1>Аналитика</h1><p>Регистрации и посещения ваших событий. Событий: {events.length}.</p></div></div>
     <div className="metric-row"><article><small>РЕГИСТРАЦИИ</small><strong>{total}</strong><span>выданные билеты</span></article><article><small>АКТИВНЫЕ</small><strong>{active}</strong><span>ждут входа</span></article><article><small>ВИЗИТЫ</small><strong>{visits}</strong><span>отмечено на входе</span></article></div>
-    <div className="analytics-grid"><article className="funnel-card"><div className="data-card-head"><span><BarChart3 /> Воронка</span><small>регистрация → визит</small></div><div className="funnel-bars">{funnel.map((item) => <div key={item.label}><span><b>{item.label}</b><strong>{item.value}</strong></span><i><b style={{ width: `${item.width}%` }} /></i></div>)}</div></article><article className="funnel-card"><div className="data-card-head"><span><Ticket /> Мои события</span></div><div className="funnel-bars">{events.filter((e) => regs[String(e.id)]).map((e) => <div key={e.id}><span><b>{e.title}</b><strong>{regs[String(e.id)].used ? "Визит" : regs[String(e.id)].code}</strong></span></div>)}{total === 0 && <p className="pad-note">Пока нет данных — зарегистрируйтесь на событие в афише.</p>}</div></article></div>
+    <div className="analytics-grid"><article className="funnel-card"><div className="data-card-head"><span><BarChart3 /> Воронка</span><small>регистрация → визит</small></div><div className="funnel-bars">{funnel.map((item) => <div key={item.label}><span><b>{item.label}</b><strong>{item.value}</strong></span><i><b style={{ width: `${item.width}%` }} /></i></div>)}</div></article><article className="funnel-card"><div className="data-card-head"><span><Ticket /> Мои события</span></div><div className="funnel-bars">{events.map((e) => <div key={e.id}><span><b>{e.title}</b><strong>{e.visits ?? 0} / {e.attendees}</strong></span></div>)}{total === 0 && <p className="pad-note">Пока нет регистраций на ваши события.</p>}</div></article></div>
   </section>;
 }
 
@@ -1139,8 +1167,14 @@ export default function Home() {
   // Серверный слой: apiUp — доступен ли API; при недоступности — локальный fallback.
   const [apiUp, setApiUp] = useState(false);
   const [serverUser, setServerUser] = useState<ApiUser | null>(null);
+  const mintInFlight = useRef(false);
+  const [mintBusy, setMintBusy] = useState(false);
+  const [checkLog, setCheckLog] = useState<CheckLog[]>([]);
   const [walletAddress, setWalletAddress] = useState<string | null>(null);
   const [serverEvents, setServerEvents] = useState<ServerEvent[]>([]);
+  const [managedEvents, setManagedEvents] = useState<ServerEvent[]>([]);
+  const [ticketEvents, setTicketEvents] = useState<ServerEvent[]>([]);
+  const [serverGuests, setServerGuests] = useState<GuestRow[]>([]);
   const [serverRegs, setServerRegs] = useState<Record<string, Reg>>({});
   const [serverWaitlist, setServerWaitlist] = useState<Record<string, WaitEntry>>({});
   const [serverFavs, setServerFavs] = useState<number[]>([]);
@@ -1149,8 +1183,8 @@ export default function Home() {
   const { favorites: localFavs, regs: localRegs, extra, statusOv, waitlist: localWaitlist } = persisted;
   const online = apiUp;
   const role = (serverUser?.role ?? "visitor") as Role;
-  const regs = serverUser ? serverRegs : localRegs;
-  const waitlist = serverUser ? serverWaitlist : localWaitlist;
+  const regs = online ? serverRegs : localRegs;
+  const waitlist = online ? serverWaitlist : localWaitlist;
   const favorites = serverUser ? serverFavs : localFavs;
 
   useEffect(() => {
@@ -1190,22 +1224,24 @@ export default function Home() {
         if (cancelled) return;
         setServerUser(me);
         setWalletAddress(me.wallet_address ?? null);
-        const [tickets, favs, queued] = await Promise.all([Events.myTickets(), Events.myFavorites(), Events.myWaitlist()]);
+        const [tickets, favs, queued] = await Promise.allSettled([Events.myTickets(), Events.myFavorites(), Events.myWaitlist()]);
         if (cancelled) return;
         const sr: Record<string, Reg> = {};
-        tickets.forEach((t) => {
+        if (tickets.status === "fulfilled") setTicketEvents(tickets.value.map((t) => t.event));
+        if (tickets.status === "fulfilled") tickets.value.forEach((t) => {
           sr[String(t.event_id)] = serverTicketToReg(t);
         });
         setServerRegs(sr);
-        setServerFavs(favs);
-        setServerWaitlist(Object.fromEntries(queued.map((entry) => [String(entry.event_id), { regId: entry.registration_id, position: entry.position }])));
+        if (favs.status === "fulfilled") setServerFavs(favs.value);
+        if (queued.status === "fulfilled") setServerWaitlist(Object.fromEntries(queued.value.map((entry) => [String(entry.event_id), { regId: entry.registration_id, position: entry.position }])));
         if (me.role === "admin") {
           try {
             setOverview(await Events.overview());
           } catch { /* ignore */ }
         }
-      } catch {
-        clearTokens();
+      } catch (error) {
+        if (error instanceof ApiError && error.status === 401) clearTokens();
+        else setMessage("Не удалось восстановить сессию. Попробуйте обновить страницу.");
       }
     });
     return () => {
@@ -1213,39 +1249,52 @@ export default function Home() {
     };
   }, []);
 
+  useEffect(() => {
+    if (!serverUser || serverUser.role === "visitor") return;
+    let cancelled = false;
+    Events.managed().then((rows) => { if (!cancelled) setManagedEvents(rows); }).catch(() => { if (!cancelled) setMessage("Не удалось загрузить ваши события"); });
+    return () => { cancelled = true; };
+  }, [serverUser, serverEvents]);
+
+  useEffect(() => {
+    if (!serverUser || serverUser.role === "visitor" || !(["guests", "checkin"].includes(view))) return;
+    let cancelled = false;
+    Promise.all(managedEvents.map((event) => Events.guests(event.id))).then((lists) => {
+      if (!cancelled) setServerGuests(lists.flat().map((g) => ({ ...g, status: g.status === "waitlisted" ? "Лист ожидания" : "Подтверждён" })));
+    }).catch(() => { if (!cancelled) setMessage("Не удалось загрузить гостей"); });
+    return () => { cancelled = true; };
+  }, [serverUser, managedEvents, view]);
+
   const refreshServerEvents = async () => {
     try {
       setServerEvents(await Events.list());
     } catch {
-      setApiUp(false);
+      setMessage("Не удалось обновить каталог. Проверьте соединение.");
     }
   };
 
   const events = useMemo(() => {
     if (online) {
-      // Онлайн: каталог сервера + локальные черновики (id Date.now — не пересекаются).
-      const mapped = serverEvents.map(mapServerEvent);
-      return [...mapped, ...extra];
+      const all = new Map([...ticketEvents, ...serverEvents, ...managedEvents].map((event) => [event.id, event]));
+      return Array.from(all.values()).map(mapServerEvent);
     }
     const seeded: EventItem[] = seedEvents.map((s) => ({ ...s, ...dateFor(s.dayOffset, s.time) }));
     const all = [...seeded, ...extra];
     return all.map((e) => ({ ...e, status: (statusOv[String(e.id)] as EventItem["status"]) ?? e.status }));
-  }, [extra, statusOv, online, serverEvents]);
+  }, [extra, statusOv, online, serverEvents, managedEvents, ticketEvents]);
 
   const visible = useMemo(() => {
     const q = query.trim().toLowerCase();
     return events.filter((e) => {
-      if (role === "visitor" && e.status !== "published") return false;
+      if (e.status !== "published") return false;
       if (!q) return true;
       return `${e.title} ${e.company} ${e.city} ${e.category}`.toLowerCase().includes(q);
     });
-  }, [events, query, role]);
+  }, [events, query]);
 
   // Visitor никогда не видит скрытое событие в деталке: fallback только из visible (SPEC §10, правило 5).
-  const selected =
-    role === "visitor"
-      ? visible.find((e) => e.id === selectedId) ?? visible[0]
-      : events.find((e) => e.id === selectedId) ?? visible[0] ?? events[0];
+  const selected = visible.find((e) => e.id === selectedId) ?? visible[0];
+  const ownEvents = managedEvents.map(mapServerEvent);
   const pendingEvent = pendingId === null || pendingId === 0 ? undefined : events.find((item) => item.id === pendingId);
 
   const patch = (p: Partial<Persisted>) => setPersisted((s) => ({ ...s, ...p }));
@@ -1268,18 +1317,35 @@ export default function Home() {
   };
 
   const registerOnline = async (id: number) => {
-    let address = walletAddress;
-    if (!address) {
-      address = await connectAndVerifyWallet();
-      setWalletAddress(address);
+    if (mintInFlight.current) return;
+    mintInFlight.current = true;
+    setMintBusy(true);
+    try {
+      let address = walletAddress;
+      if (!address) {
+        address = await connectAndVerifyWallet();
+        setWalletAddress(address);
+      }
+      const previous = serverRegs[String(id)];
+      const t = await Events.register(id);
+      setServerRegs((s) => ({ ...s, [String(id)]: serverTicketToReg(t) }));
+      const chain = previous?.signature && previous.tokenAddress && previous.wallet === address
+        ? { signature: previous.signature, tokenAddress: previous.tokenAddress }
+        : await mintNonTransferableTicket(id, t.registration_id, address);
+      setServerRegs((s) => ({ ...s, [String(id)]: { ...serverTicketToReg(t), signature: chain.signature, tokenAddress: chain.tokenAddress } }));
+      const confirmed = await Events.confirmBlockchain(t.id, chain.signature, chain.tokenAddress);
+      setServerRegs((s) => ({ ...s, [String(id)]: serverTicketToReg(confirmed) }));
+      await refreshServerEvents();
+      setView("tickets");
+    } finally {
+      mintInFlight.current = false;
+      setMintBusy(false);
     }
-    const t = await Events.register(id);
-    setServerRegs((s) => ({ ...s, [String(id)]: serverTicketToReg(t) }));
-    const chain = await mintNonTransferableTicket(id, t.registration_id, address);
-    const confirmed = await Events.confirmBlockchain(t.id, chain.signature, chain.tokenAddress);
-    setServerRegs((s) => ({ ...s, [String(id)]: serverTicketToReg(confirmed) }));
-    await refreshServerEvents();
-    setView("tickets");
+  };
+
+  const retryTicket = async (id: number) => {
+    try { await registerOnline(id); }
+    catch (error) { setMessage(error instanceof Error ? error.message : "Не удалось подтвердить билет"); }
   };
 
   const connectWallet = async () => {
@@ -1349,6 +1415,7 @@ export default function Home() {
     setWalletAddress(t.user.wallet_address ?? null);
     const [tickets, favs, queued] = await Promise.allSettled([Events.myTickets(), Events.myFavorites(), Events.myWaitlist()]);
     const sr: Record<string, Reg> = {};
+    if (tickets.status === "fulfilled") setTicketEvents(tickets.value.map((t) => t.event));
     if (tickets.status === "fulfilled") tickets.value.forEach((x) => { sr[String(x.event_id)] = serverTicketToReg(x); });
     setServerRegs(sr);
     setServerFavs(favs.status === "fulfilled" ? favs.value : []);
@@ -1389,6 +1456,10 @@ export default function Home() {
     clearTokens();
     setMessage("");
     setServerUser(null);
+    setManagedEvents([]);
+    setTicketEvents([]);
+    setServerGuests([]);
+    setCheckLog([]);
     setWalletAddress(null);
     setServerRegs({});
     setServerWaitlist({});
@@ -1419,7 +1490,7 @@ export default function Home() {
       try {
         await Events.patch(id, { status: current === "published" ? "hidden" : "published" });
         await refreshServerEvents();
-      } catch { /* ignore */ }
+      } catch (error) { setMessage(error instanceof Error ? error.message : "Не удалось изменить статус"); }
       return;
     }
     const key = String(id);
@@ -1446,19 +1517,20 @@ export default function Home() {
           const key = Object.keys(s).find((k) => s[k].code === code);
           return key ? { ...s, [key]: { ...s[key], used: true, blockchainStatus: "used" } } : s;
         });
-        patch({ log: [...persisted.log, { label: code, result: "ok", at: new Date().toISOString() }] });
+        setCheckLog((log) => [...log, { label: code, result: "ok", at: new Date().toISOString() }]);
+        await refreshServerEvents();
         setMessage(`Проход разрешён · check-in записан в Solana: ${shortWallet(checked.check_in_signature)}`);
       } catch (e) {
         const status = e instanceof ApiError ? e.status : 0;
         if (status === 409) {
-          patch({ log: [...persisted.log, { label: input.toUpperCase(), result: "duplicate", at: new Date().toISOString() }] });
+          setCheckLog((log) => [...log, { label: input.toUpperCase(), result: "duplicate", at: new Date().toISOString() }]);
           setMessage("Уже отмечен — повторный проход запрещён");
         } else if (status === 404) {
           setMessage("Билет не найден");
         } else if (status === 403) {
           setMessage("Чужое событие");
         } else {
-          setMessage("API недоступно — проверьте соединение");
+          setMessage(e instanceof Error ? e.message : "Не удалось проверить билет");
         }
       }
       return;
@@ -1499,7 +1571,7 @@ export default function Home() {
           return next;
         });
         await refreshServerEvents();
-      } catch { /* ignore */ }
+      } catch (error) { setMessage(error instanceof Error ? error.message : "Не удалось отменить регистрацию"); }
       return;
     }
     if (!localRegs[key] || localRegs[key].used) return;
@@ -1520,7 +1592,7 @@ export default function Home() {
           delete next[key];
           return next;
         });
-      } catch { /* ignore */ }
+      } catch (error) { setMessage(error instanceof Error ? error.message : "Не удалось выйти из листа ожидания"); }
       return;
     }
     if (!localWaitlist[key]) return;
@@ -1530,27 +1602,19 @@ export default function Home() {
   };
 
   const createEvent = async (e: EventItem) => {
-    if (online && serverUser && (serverUser.role === "organizer" || serverUser.role === "admin")) {
-      try {
-        const cats = await Categories.list();
-        const cat = cats.find((c) => c.title === e.category);
-        await Events.create({
-          title: e.title,
-          city: e.city,
-          place: e.place,
-          starts_at: e.date,
-          capacity: e.capacity,
-          category_id: cat?.id ?? null,
-          cover_url: e.image,
-        });
-        await refreshServerEvents();
-        setView("events");
-        return;
-      } catch { /* ignore */ }
+    if (!online || !serverUser || !["organizer", "admin"].includes(serverUser.role)) {
+      throw new Error("Для публикации войдите как организатор и подключитесь к серверу");
     }
-    patch({ extra: [...extra, e] });
-    setSelectedId(e.id);
+    const cats = await Categories.list();
+    const cat = cats.find((c) => c.title === e.category);
+    const created = await Events.create({
+      title: e.title, city: e.city, place: e.place, starts_at: e.startsAt,
+      capacity: e.capacity, category_id: cat?.id ?? null, cover_url: e.image,
+    });
+    setManagedEvents((rows) => [created, ...rows]);
+    await refreshServerEvents();
     setView("events");
+    setMessage("Событие опубликовано");
   };
 
   const displayProfile: Profile | null = serverUser
@@ -1603,18 +1667,19 @@ export default function Home() {
         <Topbar onMenu={() => setMenuOpen(true)} query={query} setQuery={setQuery} role={role} profile={displayProfile} apiUp={online} walletAddress={walletAddress} onConnectWallet={connectWallet} loggedIn={serverUser !== null} onAccount={() => serverUser ? setView("cabinet") : setPendingId(0)} />
         {pendingId !== null && <AuthModal apiUp={online} eventTitle={pendingEvent?.title} full={pendingEvent ? occupied(pendingEvent, regs, online) >= pendingEvent.capacity : false} onSubmit={submitAuth} onContinue={continueRegistration} onClose={() => setPendingId(null)} />}
         {message && view !== "checkin" && <div className="app-notice" role="status"><span>{message}</span><button onClick={() => setMessage("")} aria-label="Закрыть уведомление"><X /></button></div>}
+        {view === "discover" && !selected && <section className="content"><h1>События не найдены</h1><p>Попробуйте изменить поиск.</p></section>}
         {view === "discover" && selected && (
           <Discover list={visible} selected={selected} setSelected={(e) => setSelectedId(e.id)} regs={regs} register={register} favorites={favorites} toggleFav={toggleFav} online={online} waitlist={waitlist} leaveWaitlist={leaveWaitlist} />
         )}
-        {view === "tickets" && <TicketView regs={regs} events={events} profile={displayProfile} onCancel={cancelReg} />}
+        {view === "tickets" && <TicketView regs={regs} events={events} profile={displayProfile} onCancel={cancelReg} onRetry={retryTicket} busy={mintBusy} />}
         {view === "cabinet" && <CabinetView regs={regs} events={events} favorites={favorites} toggleFav={toggleFav} go={setView} profile={displayProfile} onSaveProfile={(name, email) => patch({ profile: { name, email } })} server={serverUser !== null} onLogout={logout} />}
         {view === "create" && <CreateView onCreate={createEvent} />}
         {view === "studio" && <Studio />}
-        {view === "events" && <EventsView events={events} regs={regs} online={online} go={setView} toggleStatus={toggleStatus} />}
-        {view === "guests" && <GuestsView profile={displayProfile} guests={persisted.guests} onImport={importGuests} />}
-        {view === "checkin" && <CheckinView regs={regs} events={events} log={persisted.log} profile={displayProfile} checkIn={checkIn} message={message} />}
-        {view === "analytics" && <AnalyticsView events={events} regs={regs} />}
-        {view === "admin" && <AdminView events={events} regs={regs} online={online} log={persisted.log} overview={overview} toggleStatus={toggleStatus} />}
+        {view === "events" && <EventsView events={ownEvents} regs={regs} online={online} go={setView} toggleStatus={toggleStatus} />}
+        {view === "guests" && <GuestsView profile={displayProfile} guests={online ? serverGuests : persisted.guests} online={online} onImport={importGuests} />}
+        {view === "checkin" && <CheckinView regs={regs} events={events} log={online ? checkLog : persisted.log} guests={serverGuests} online={online} profile={displayProfile} checkIn={checkIn} message={message} />}
+        {view === "analytics" && <AnalyticsView events={ownEvents} regs={regs} />}
+        {view === "admin" && <AdminView events={ownEvents} regs={regs} online={online} log={online ? checkLog : persisted.log} overview={overview} toggleStatus={toggleStatus} />}
       </div>
     </main>
   );

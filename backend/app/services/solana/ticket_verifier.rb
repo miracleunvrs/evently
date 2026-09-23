@@ -19,8 +19,7 @@ module Solana
       raise RpcError, "mint is not part of transaction" unless all_keys.include?(token_address)
 
       expected_memo = "evently:v1:#{@ticket.event.id}:#{@ticket.registration_id}"
-      logs = Array(transaction.dig("meta", "logMessages")).join("\n")
-      raise RpcError, "ticket memo does not match registration" unless logs.include?(expected_memo)
+      raise RpcError, "ticket memo does not match registration" unless Memo.matches?(transaction, expected_memo)
 
       mint = @client.mint_account(token_address)
       raise RpcError, "mint does not exist" unless mint&.dig("value")

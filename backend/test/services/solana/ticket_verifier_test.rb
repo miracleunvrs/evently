@@ -5,7 +5,7 @@ class SolanaTicketVerifierTest < ActiveSupport::TestCase
     def transaction(_signature)
       {
         "meta" => { "err" => failed ? { "InstructionError" => [ 0, "error" ] } : nil, "logMessages" => [ "Program log: Memo (len 18): evently:v1:#{event_id}:#{registration_id}" ] },
-        "transaction" => { "message" => { "accountKeys" => [
+        "transaction" => { "message" => { "instructions" => [ { "programId" => Solana::Memo::PROGRAM_ID, "parsed" => "evently:v1:#{event_id}:#{registration_id}" } ], "accountKeys" => [
           { "pubkey" => wallet, "signer" => true },
           { "pubkey" => mint, "signer" => false }
         ] } }

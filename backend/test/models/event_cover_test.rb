@@ -6,14 +6,14 @@ class EventCoverTest < ActiveSupport::TestCase
   end
 
   test "new event receives a cover from the shared collection" do
-    event = Event.create!(organizer: @organizer, title: "Cover test", capacity: 20)
+    event = Event.create!(organizer: @organizer, title: "Cover test", starts_at: 2.days.from_now.iso8601, capacity: 20)
 
     assert_includes Event::COVER_URLS, event.cover_url
     assert_equal event.cover_url, event.reload.cover_url
   end
 
   test "chosen cover is not replaced" do
-    event = Event.create!(organizer: @organizer, title: "Custom cover", capacity: 20, cover_url: "/my-cover.jpg")
+    event = Event.create!(organizer: @organizer, title: "Custom cover", starts_at: 2.days.from_now.iso8601, capacity: 20, cover_url: "/my-cover.jpg")
 
     assert_equal "/my-cover.jpg", event.cover_url
   end

@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_09_21_000002) do
+ActiveRecord::Schema[8.1].define(version: 2026_09_23_000001) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -110,7 +110,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_21_000002) do
     t.string "wallet_address", limit: 44
     t.index ["check_in_signature"], name: "index_tickets_on_check_in_signature", unique: true, where: "(check_in_signature IS NOT NULL)"
     t.index ["code"], name: "index_tickets_on_code", unique: true
-    t.index ["registration_id"], name: "index_tickets_on_registration_id"
+    t.index ["registration_id"], name: "index_tickets_on_registration_id", unique: true
     t.index ["solana_signature"], name: "index_tickets_on_solana_signature", unique: true, where: "(solana_signature IS NOT NULL)"
     t.index ["token_address"], name: "index_tickets_on_token_address", unique: true, where: "(token_address IS NOT NULL)"
     t.index ["wallet_address", "blockchain_status"], name: "index_tickets_on_wallet_address_and_blockchain_status"
