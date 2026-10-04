@@ -1,0 +1,14 @@
+   Compiling evently-cli v0.1.0 (/Users/ruslan/Documents/ChatGPT/need sum/evently/coursework/rk1/cli)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.14s
+     Running `coursework/rk1/target/debug/evently-cli demo`
+{
+  "title": "Evently Rust lab",
+  "capacity": 2,
+  "tickets": [
+    {
+      "owner": "guest-alice",
+      "status": "Used"
+    }
+  ]
+}
+Repeated check-in: AlreadyUsed

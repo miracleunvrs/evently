@@ -1,0 +1,12 @@
+
+> evently-web3@1.0.0 test
+> vitest run --config vitest.config.ts
+
+
+ RUN  v5.0.1 /Users/ruslan/Documents/ChatGPT/need sum/evently
+
+
+ Test Files  2 passed (2)
+      Tests  8 passed (8)
+   Start at  23:12:07
+   Duration  93ms (transform 59%, import 20%, tests 13%, worker 9%)

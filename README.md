@@ -102,6 +102,7 @@ The Rails tests cover Phantom-compatible Ed25519 verification and the Solana tic
 - `backend/app/services/solana/` — JSON-RPC client and ticket verification
 - `db/`, `drizzle/` — the original local/D1 schema retained for offline compatibility
 - `SPEC.md` — product and business rules
+- `coursework/rk1/` — reproducible Rust, Anchor, PDA and token labs, with real local-validator evidence and a separate public Devnet transaction analysis
 
 ## MVP boundaries
 
@@ -145,3 +146,10 @@ npm run dev
 Для локальных тестовых аккаунтов посетителя, организатора и администратора выполните `docker compose exec api bin/rails runner script/create_local_demo_accounts.rb`, затем `docker compose exec api cat tmp/demo_accounts.txt`. Пароли генерируются заново и не попадают в Git. В каталоге восемь демо-событий и три авторские 3D-обложки; новая обложка выбирается случайно один раз при создании события.
 
 Приватный ключ Phantom никогда не отправляется в Evently. Пользователь подписывает challenge и blockchain-транзакцию внутри кошелька.
+
+### Учебные работы до РК1
+
+В [coursework/rk1](coursework/rk1/README.md) находятся Rust CLI, собственная Solana Program,
+Anchor Counter, профиль PDA, учебный токен ELAB и проверка полного сценария Evently.
+Доказательства локального запуска отделены от анализа публичной Devnet-транзакции.
+Учебный ELAB передаваем; билеты основного продукта остаются непередаваемыми.
