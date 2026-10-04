@@ -1,0 +1,157 @@
+{
+  "cluster": "localnet",
+  "api": "http://127.0.0.1:8001",
+  "started_at": "2026-10-04T18:11:07.779Z",
+  "checks": [
+    {
+      "label": "login_visitor",
+      "actual": 200,
+      "expected": 200,
+      "passed": true
+    },
+    {
+      "label": "role_visitor",
+      "actual": "visitor",
+      "expected": "visitor",
+      "passed": true
+    },
+    {
+      "label": "login_organizer",
+      "actual": 200,
+      "expected": 200,
+      "passed": true
+    },
+    {
+      "label": "role_organizer",
+      "actual": "organizer",
+      "expected": "organizer",
+      "passed": true
+    },
+    {
+      "label": "login_admin",
+      "actual": 200,
+      "expected": 200,
+      "passed": true
+    },
+    {
+      "label": "role_admin",
+      "actual": "admin",
+      "expected": "admin",
+      "passed": true
+    },
+    {
+      "label": "wallet_challenge_visitor",
+      "actual": 200,
+      "expected": 200,
+      "passed": true
+    },
+    {
+      "label": "wallet_verified_visitor",
+      "actual": 200,
+      "expected": 200,
+      "passed": true
+    },
+    {
+      "label": "wallet_challenge_organizer",
+      "actual": 200,
+      "expected": 200,
+      "passed": true
+    },
+    {
+      "label": "wallet_verified_organizer",
+      "actual": 200,
+      "expected": 200,
+      "passed": true
+    },
+    {
+      "label": "organizer_creates_event",
+      "actual": 201,
+      "expected": 201,
+      "passed": true
+    },
+    {
+      "label": "guest_reserves_ticket",
+      "actual": 201,
+      "expected": 201,
+      "passed": true
+    },
+    {
+      "label": "rails_verifies_real_token2022",
+      "actual": 200,
+      "expected": 200,
+      "passed": true
+    },
+    {
+      "label": "ticket_is_confirmed",
+      "actual": "confirmed",
+      "expected": "confirmed",
+      "passed": true
+    },
+    {
+      "label": "guest_cannot_read_guest_list",
+      "actual": 404,
+      "expected": 404,
+      "passed": true
+    },
+    {
+      "label": "guest_cannot_create_event",
+      "actual": 403,
+      "expected": 403,
+      "passed": true
+    },
+    {
+      "label": "full_event_accepts_waitlist",
+      "actual": 201,
+      "expected": 201,
+      "passed": true
+    },
+    {
+      "label": "checkin_prepared",
+      "actual": 200,
+      "expected": 200,
+      "passed": true
+    },
+    {
+      "label": "first_checkin_accepted",
+      "actual": 200,
+      "expected": 200,
+      "passed": true
+    },
+    {
+      "label": "duplicate_checkin_rejected",
+      "actual": 409,
+      "expected": 409,
+      "passed": true
+    },
+    {
+      "label": "used_ticket_cannot_be_canceled",
+      "actual": 409,
+      "expected": 409,
+      "passed": true
+    },
+    {
+      "label": "one_registration",
+      "actual": 1,
+      "expected": 1,
+      "passed": true
+    },
+    {
+      "label": "one_visit",
+      "actual": 1,
+      "expected": 1,
+      "passed": true
+    }
+  ],
+  "signatures": {
+    "mint": "4XmbJVzEeFuVZG7LaGLu3JuRTcfRwhiqoPV9KyQCbhBeN5ZyDi3QRX84RbZQVb5To81TJx4ERoTWPhUwHDr8MReK",
+    "checkin": "3RJLeCARLsu5av3vpvMsTKJxtNtPXzuiSVS9bjK2jewsn1JyYje589VbHHQSaDk2oG8wBXqDokzNzMGBdRv51377"
+  },
+  "event_id": 10,
+  "mint": "A1j8dirkwvVPZbJAZ3DGVEe2Wo2vR5b72amvoFc1UA14",
+  "stats": {
+    "registrations": 1,
+    "visits": 1,
+    "capacity": 1
+  },
+  "finished_at": "2026-10-04T18:11:09.811Z"
+}

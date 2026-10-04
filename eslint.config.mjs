@@ -17,6 +17,9 @@ const eslintConfig = defineConfig([
     ".wrangler/**",
     "backend/vendor/**",
     "backend/tmp/**",
+    "coursework/**/target/**",
+    "coursework/**/.local-ledger/**",
+    "coursework/**/.secrets/**",
   ]),
   {
     files: ["components/ui/**/*.{ts,tsx}", "hooks/use-mobile.ts"],

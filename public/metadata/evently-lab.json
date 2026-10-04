@@ -1,0 +1,8 @@
+{
+  "name": "Evently Lab Credit",
+  "symbol": "ELAB",
+  "description": "Educational Token-2022 token for Evently coursework. Used only on localnet and Devnet. Not a ticket, currency, investment or payment instrument.",
+  "image": "https://raw.githubusercontent.com/miracleunvrs/evently/main/public/covers/03-creative-play.jpg",
+  "external_url": "https://github.com/miracleunvrs/evently",
+  "attributes": [{"trait_type": "Purpose", "value": "Solana coursework"}]
+}

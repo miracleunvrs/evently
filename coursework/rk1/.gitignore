@@ -1,0 +1,5 @@
+.secrets/
+target/
+node_modules/
+.local-ledger/
+.DS_Store
