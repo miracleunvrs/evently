@@ -13,6 +13,8 @@ struct WalletActivity: Equatable {
         case confirmWallet(String)
         case success(String)
         case failure(String)
+        /// Phantom could not serve a Devnet connection; the user can carry on with a plain one.
+        case devnetBlocked
     }
     var title: String
     var phase: Phase
@@ -43,7 +45,7 @@ final class WalletCoordinator: ObservableObject {
     @Published private(set) var resume: (label: String, action: () -> Void)?
 
     private enum Operation: Codable {
-        case connect(secretKey: Data)
+        case connect(secretKey: Data, devnet: Bool)
         case verify(address: String, message: String)
         case mint(ticketId: Int, tokenAddress: String)
         case checkIn(code: String)
@@ -52,7 +54,7 @@ final class WalletCoordinator: ObservableObject {
             switch self {
             case .connect: .connect
             case .verify: .signMessage
-            case .mint, .checkIn: .signAndSendTransaction
+            case .mint, .checkIn: .signTransaction
             }
         }
         var title: String {
@@ -71,8 +73,10 @@ final class WalletCoordinator: ObservableObject {
     private struct Stored: Codable {
         var session: PhantomSession?
         var operation: Operation?
-        /// Mint transactions Phantom has sent but the API has not confirmed yet, by ticket id.
+        /// Mint transactions sent to the network but not confirmed by the API yet, by ticket id.
         var submitted: [Int: Submitted] = [:]
+        /// Phantom failed on a Devnet connection, so connect without asking for a cluster.
+        var skipDevnet: Bool?
     }
 
     private static let account = "wallet"
@@ -85,6 +89,8 @@ final class WalletCoordinator: ObservableObject {
         }
     }
     private var lastRequest: URL?
+    /// The ticket or check-in request in flight, to offer again after reconnecting.
+    private var attempt: (label: String, action: () -> Void)?
     private var accountChange: AnyCancellable?
 
     init(api: EventlyAPI) {
@@ -104,9 +110,10 @@ final class WalletCoordinator: ObservableObject {
 
     func connect() {
         let secretKey = PhantomLink.newSecretKey()
-        stored.operation = .connect(secretKey: secretKey)
+        let devnet = stored.skipDevnet != true
+        stored.operation = .connect(secretKey: secretKey, devnet: devnet)
         activity = WalletActivity(title: "Подключение Phantom", phase: .waiting)
-        do { open(try PhantomLink.connect(base: base, secretKey: secretKey)) } catch { fail(error) }
+        do { open(try PhantomLink.connect(base: base, secretKey: secretKey, devnet: devnet)) } catch { fail(error) }
     }
 
     func confirmWallet() {
@@ -114,12 +121,15 @@ final class WalletCoordinator: ObservableObject {
         run("Подтверждение кошелька", "Готовим сообщение для подписи…") {
             let message = try await self.api.walletChallenge(address: session.walletAddress)
             self.stored.operation = .verify(address: session.walletAddress, message: message)
-            try self.request(.signMessage, ["message": Base58.encode(Data(message.utf8)), "display": "utf8"], session)
+            // Same payload as Phantom's demo app. The optional "display" field stays out: utf8 is the default,
+            // and requests that carry it have been reported to fail with Phantom's internal error on iOS.
+            try self.request(.signMessage, ["message": Base58.encode(Data(message.utf8))], session)
         }
     }
 
     /// Reserves a seat (or picks up a ticket that is still waiting for its mint) and asks Phantom to mint the ticket.
     func issueTicket(eventId: Int) {
+        attempt = ("Получить билет", { self.issueTicket(eventId: eventId) })
         guard let session = readySession(resume: "Получить билет", { self.issueTicket(eventId: eventId) }) else { return }
         run("Выпуск билета", "Бронируем место…") {
             let ticket = try await self.api.register(eventId: eventId)
@@ -139,20 +149,21 @@ final class WalletCoordinator: ObservableObject {
                                                            recentBlockhash: try await blockhash) else { throw PhantomError.invalidResponse }
             let wire = transaction.serialized(signatures: [mint: try mintKey.signature(for: transaction.message)])
             self.stored.operation = .mint(ticketId: ticket.id, tokenAddress: mint.base58)
-            try self.request(.signAndSendTransaction, ["transaction": Base58.encode(wire)], session)
+            try self.request(.signTransaction, ["transaction": Base58.encode(wire)], session)
         }
     }
 
     func checkIn(code: String) {
         let code = code.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
         guard !code.isEmpty else { return }
+        attempt = ("Проверить билет", { self.checkIn(code: code) })
         guard let session = readySession(resume: "Проверить билет", { self.checkIn(code: code) }) else { return }
         run("Проверка билета", "Ищем билет…") {
             let memo = try await self.api.prepareCheckIn(code: code)
             guard let organizer = SolanaKey(base58: session.walletAddress) else { throw PhantomError.invalidResponse }
             let transaction = TicketTransaction.checkIn(organizer: organizer, memo: memo, recentBlockhash: try await self.rpc.latestBlockhash())
             self.stored.operation = .checkIn(code: code)
-            try self.request(.signAndSendTransaction, ["transaction": Base58.encode(transaction.serialized())], session)
+            try self.request(.signTransaction, ["transaction": Base58.encode(transaction.serialized())], session)
         }
     }
 
@@ -177,6 +188,10 @@ final class WalletCoordinator: ObservableObject {
             } catch PhantomError.unauthorized {
                 stored.session = nil
                 fail(PhantomError.unauthorized)
+            } catch PhantomError.internalError where usedDevnet(operation) {
+                // Phantom answers a Devnet connection with its internal error when Testnet Mode is off.
+                if case .verify = operation {} else if resume == nil { resume = attempt }
+                activity?.phase = .devnetBlocked
             } catch {
                 fail(error)
             }
@@ -186,8 +201,8 @@ final class WalletCoordinator: ObservableObject {
 
     private func finish(_ operation: Operation, _ url: URL) async throws {
         switch operation {
-        case .connect(let secretKey):
-            let connected = try PhantomLink.session(from: url, secretKey: secretKey)
+        case .connect(let secretKey, let devnet):
+            let connected = try PhantomLink.session(from: url, secretKey: secretKey, devnet: devnet)
             stored.session = connected
             if connected.walletAddress == api.user?.verifiedWallet {
                 succeed("Кошелёк подключён")
@@ -202,15 +217,11 @@ final class WalletCoordinator: ObservableObject {
             try await api.verifyWallet(address: address, message: message, signature: signature)
             succeed("Кошелёк подтверждён")
         case .mint(let ticketId, let tokenAddress):
-            guard let session, let signature = try PhantomLink.response(from: url, session: session)["signature"] else {
-                throw PhantomError.invalidResponse
-            }
+            let signature = try await submit(url)
             stored.submitted[ticketId] = Submitted(signature: signature, tokenAddress: tokenAddress)
             try await finishMint(ticketId: ticketId)
         case .checkIn(let code):
-            guard let session, let signature = try PhantomLink.response(from: url, session: session)["signature"] else {
-                throw PhantomError.invalidResponse
-            }
+            let signature = try await submit(url)
             progress("Ждём подтверждения сети Solana…")
             try await rpc.waitForConfirmation(signature)
             progress("Отмечаем проход…")
@@ -218,6 +229,20 @@ final class WalletCoordinator: ObservableObject {
             await api.refresh()
             succeed("Проход разрешён · \(result.eventTitle)")
         }
+    }
+
+    /// Phantom only signs; the app sends the transaction to Devnet itself, whatever network Phantom is on.
+    private func submit(_ url: URL) async throws -> String {
+        guard let session, let signed = try PhantomLink.response(from: url, session: session)["transaction"].flatMap(Base58.decode) else {
+            throw PhantomError.invalidResponse
+        }
+        progress("Отправляем в сеть Solana…")
+        return try await rpc.send(signed)
+    }
+
+    private func usedDevnet(_ operation: Operation) -> Bool {
+        if case .connect(_, let devnet) = operation { return devnet }
+        return session?.usesDevnet ?? true
     }
 
     /// Waits for the mint to confirm and lets the API verify it. A submitted mint is kept until it has a verdict,
@@ -266,7 +291,15 @@ final class WalletCoordinator: ObservableObject {
         stored.operation = nil
         lastRequest = nil
         resume = nil
+        attempt = nil
         activity = nil
+    }
+
+    /// Reconnects without the Devnet cluster and carries on with what the user was doing.
+    func continueWithoutDevnet() {
+        stored.skipDevnet = true
+        stored.session = nil
+        connect()
     }
 
     func continueAfterWallet() {

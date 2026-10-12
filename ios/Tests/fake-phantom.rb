@@ -10,6 +10,7 @@
 #
 # GET /control?reject=1 makes the next request come back declined, like a user tapping Cancel in Phantom.
 # GET /control?wallet=2 switches to another wallet, like changing the account inside Phantom.
+# GET /control?testnet_mode=0 makes requests on a Devnet connection fail with Phantom's internal error (-32603).
 #
 # With MOCK_CHAIN=1 nothing reaches Solana: transactions are kept in memory and this process also answers the
 # JSON-RPC calls the app and the API make (point EVENTLY_TEST_RPC and the API's SOLANA_RPC_URL at it). That covers
@@ -46,7 +47,7 @@ File.binwrite(KEY_FILE, RbNaCl::Random.random_bytes(32)) unless File.exist?(KEY_
 SEED = File.binread(KEY_FILE)
 BOX_KEY = RbNaCl::PrivateKey.generate
 SESSIONS = {}
-STATE = { reject: false, wallet: 0 }
+STATE = { reject: false, wallet: 0, testnet_mode: true }
 
 def wallet = RbNaCl::SigningKey.new(STATE[:wallet].zero? ? SEED : Digest::SHA256.digest("#{SEED}#{STATE[:wallet]}"))
 def address = b58(wallet.verify_key.to_bytes)
@@ -75,18 +76,30 @@ def payload(params)
   dapp_key = unb58(params.fetch("dapp_encryption_public_key"))
   plain = RbNaCl::Box.new(RbNaCl::PublicKey.new(dapp_key), BOX_KEY).decrypt(unb58(params.fetch("nonce")), unb58(params.fetch("payload")))
   fields = JSON.parse(plain)
-  raise KeyError, "unknown session" unless SESSIONS[fields["session"]] == dapp_key
+  session = SESSIONS[fields["session"]]
+  raise KeyError, "unknown session" unless session && session[:key] == dapp_key
+  raise InternalError if session[:devnet] && !STATE[:testnet_mode]
   [ dapp_key, fields ]
 end
 
-# Signs as the fee payer (the first account of the message) and submits the transaction.
-def sign_and_send(wire)
+InternalError = Class.new(StandardError)
+
+# Signs as the fee payer (the first account of the message). Like Phantom's signTransaction, it does not submit.
+def sign(wire)
   count = wire.getbyte(0)
   message = wire.byteslice(1 + 64 * count..)
   raise "fee payer is not this wallet" unless message.byteslice(4, 32) == wallet.verify_key.to_bytes
   wire[1, 64] = wallet.sign(message)
-  return rpc("sendTransaction", [ Base64.strict_encode64(wire), { encoding: "base64", preflightCommitment: "confirmed" } ]) unless MOCK_CHAIN
+  wire
+end
 
+# The mock chain's sendTransaction: every signer must have signed, then the transaction counts as confirmed.
+def accept(wire)
+  count = wire.getbyte(0)
+  message = wire.byteslice(1 + 64 * count..)
+  count.times do |index|
+    RbNaCl::VerifyKey.new(message.byteslice(4 + 32 * index, 32)).verify(wire.byteslice(1 + 64 * index, 64), message)
+  end
   b58(wire.byteslice(1, 64)).tap do |signature|
     SENT[signature] = decode(message)
     File.binwrite(SENT_FILE, Marshal.dump(SENT))
@@ -135,6 +148,7 @@ def mock_rpc(method, params)
   when "getLatestBlockhash" then { context: context, value: { blockhash: b58(RbNaCl::Random.random_bytes(32)), lastValidBlockHeight: 1000 } }
   when "getMinimumBalanceForRentExemption" then 1_513_840
   when "getBalance" then { context: context, value: LAMPORTS }
+  when "sendTransaction" then accept(Base64.decode64(params[0]))
   when "getSignatureStatuses" then { context: context, value: params[0].map { |signature| SENT[signature] && { slot: 1, err: nil, confirmationStatus: "confirmed" } } }
   when "getTransaction"
     transaction = SENT[params[0]] or return nil
@@ -165,20 +179,22 @@ def answer(path, params)
     when "/ul/v1/connect"
       dapp_key = unb58(params.fetch("dapp_encryption_public_key"))
       session = SecureRandom.hex(16)
-      SESSIONS[session] = dapp_key
+      SESSIONS[session] = { key: dapp_key, devnet: params["cluster"] == "devnet" }
       sealed(dapp_key, { public_key: address, session: session }).merge(phantom_encryption_public_key: b58(BOX_KEY.public_key.to_bytes))
     when "/ul/v1/signMessage"
       dapp_key, request = payload(params)
       sealed(dapp_key, { signature: b58(wallet.sign(unb58(request.fetch("message")))) })
-    when "/ul/v1/signAndSendTransaction"
+    when "/ul/v1/signTransaction"
       dapp_key, request = payload(params)
-      sealed(dapp_key, { signature: sign_and_send(unb58(request.fetch("transaction"))) })
+      sealed(dapp_key, { transaction: b58(sign(unb58(request.fetch("transaction")))) })
     else
       raise "unknown method #{path}"
     end
   "#{redirect}?#{URI.encode_www_form(fields)}"
 rescue KeyError, RbNaCl::CryptoError
   "#{redirect}?#{URI.encode_www_form(errorCode: 4100, errorMessage: "The requested method and/or account has not been authorized by the user.")}"
+rescue InternalError
+  "#{redirect}?#{URI.encode_www_form(errorCode: -32603, errorMessage: "Unexpected error")}"
 rescue StandardError => error
   "#{redirect}?#{URI.encode_www_form(errorCode: -32603, errorMessage: error.message)}"
 end
@@ -204,6 +220,7 @@ loop do
   elsif path == "/control"
     STATE[:reject] = params["reject"] == "1"
     STATE[:wallet] = params["wallet"].to_i if params["wallet"]
+    STATE[:testnet_mode] = params["testnet_mode"] != "0" if params["testnet_mode"]
     client.write "HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok"
   elsif path == "/wallet"
     body = { address: address, lamports: balance }.to_json

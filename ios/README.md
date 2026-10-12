@@ -29,10 +29,12 @@ xcrun devicectl device process launch --device DEVICE_UDID com.miracleunvrs.even
 The app talks to Phantom through its deeplinks (`https://phantom.app/ul/v1/…`) and receives the answers on the `evently://phantom/…` URL scheme. Nothing is embedded: no WebView and no SDK.
 
 - `SolanaKit.swift` — Base58, NaCl box (X25519 + XSalsa20-Poly1305, the encryption Phantom deeplinks use), the Ed25519 curve check for program-derived addresses, transaction serialization, and the two Evently transactions: the ticket mint (same instructions as `lib/web3.ts`) and the check-in memo.
-- `PhantomLink.swift` — the deeplink protocol (connect, signMessage, signAndSendTransaction) and the Solana JSON-RPC calls.
+- `PhantomLink.swift` — the deeplink protocol (connect, signMessage, signTransaction) and the Solana JSON-RPC calls. Phantom only signs: the app submits transactions to Devnet itself, because Phantom has deprecated `signAndSendTransaction` for deeplinks.
 - `Wallet.swift` — `WalletCoordinator`, which runs each round trip. The step in flight is stored in the Keychain, so an answer is finished correctly even if iOS restarted the app while the user was in Phantom.
 
-What the user needs: the Phantom app with Testnet Mode on (Solana Devnet) and about 0.005 Devnet SOL for the mint; a check-in costs the organizer one transaction fee. Connecting takes two visits to Phantom the first time: approve the connection, then sign a free message that proves the wallet is theirs.
+What the user needs: the Phantom app and about 0.005 Devnet SOL for the mint. Testnet Mode (Solana Devnet) should be on in Phantom so it previews transactions correctly; if Phantom answers a Devnet connection with its internal error, the app offers to reconnect without the cluster and carries on.
+
+Other notes: a check-in costs the organizer one transaction fee. Connecting takes two visits to Phantom the first time: approve the connection, then sign a free message that proves the wallet is theirs.
 
 ### Tests
 

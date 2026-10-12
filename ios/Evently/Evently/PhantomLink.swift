@@ -10,11 +10,16 @@ struct PhantomSession: Codable, Equatable {
     let phantomPublicKey: Data
     let session: String
     let walletAddress: String
+    /// Whether the connection asked Phantom for the Devnet cluster. Sessions saved before this field existed did.
+    var devnet: Bool?
+    var usesDevnet: Bool { devnet ?? true }
 }
 
 enum PhantomError: LocalizedError, Equatable {
     case cancelled
     case unauthorized
+    /// Phantom's catch-all -32603: it could not process the request at all.
+    case internalError
     case rejected(String)
     case invalidResponse
 
@@ -22,6 +27,7 @@ enum PhantomError: LocalizedError, Equatable {
         switch self {
         case .cancelled: "Действие отменено в Phantom"
         case .unauthorized: "Phantom больше не доверяет этому подключению. Подключи кошелёк заново"
+        case .internalError: "Phantom не смог обработать запрос. Обнови Phantom и попробуй ещё раз"
         case .rejected(let message): "Phantom отклонил запрос: \(message)"
         case .invalidResponse: "Не удалось прочитать ответ Phantom"
         }
@@ -31,11 +37,11 @@ enum PhantomError: LocalizedError, Equatable {
 enum PhantomLink {
     static let universalLink = URL(string: "https://phantom.app/ul/v1")!
     static let appURL = "https://evently-events.miracl3rk.chatgpt.site"
-    static let cluster = "devnet"
     static let scheme = "evently"
 
     enum Method: String, Codable {
-        case connect, signMessage, signAndSendTransaction
+        // signAndSendTransaction is deprecated by Phantom: the app asks for a signature and submits the transaction itself.
+        case connect, signMessage, signTransaction
     }
 
     static func newSecretKey() -> Data { Curve25519.KeyAgreement.PrivateKey().rawRepresentation }
@@ -50,13 +56,13 @@ enum PhantomLink {
         return Method(rawValue: url.lastPathComponent)
     }
 
-    static func connect(base: URL = universalLink, secretKey: Data) throws -> URL {
+    /// `devnet` asks Phantom to use Solana Devnet for this connection, which needs Testnet Mode switched on in Phantom.
+    static func connect(base: URL = universalLink, secretKey: Data, devnet: Bool) throws -> URL {
         try url(base, .connect, [
             ("app_url", appURL),
             ("dapp_encryption_public_key", Base58.encode(publicKey(for: secretKey))),
-            ("redirect_link", redirect(.connect)),
-            ("cluster", cluster)
-        ])
+            ("redirect_link", redirect(.connect))
+        ] + (devnet ? [("cluster", "devnet")] : []))
     }
 
     /// A signing request; the payload travels encrypted with the session key.
@@ -75,7 +81,7 @@ enum PhantomLink {
         ])
     }
 
-    static func session(from url: URL, secretKey: Data) throws -> PhantomSession {
+    static func session(from url: URL, secretKey: Data, devnet: Bool) throws -> PhantomSession {
         let query = try query(of: url)
         guard let phantomKey = query["phantom_encryption_public_key"].flatMap(Base58.decode), phantomKey.count == 32 else {
             throw PhantomError.invalidResponse
@@ -84,7 +90,7 @@ enum PhantomLink {
         guard let address = data["public_key"], SolanaKey(base58: address) != nil, let session = data["session"] else {
             throw PhantomError.invalidResponse
         }
-        return PhantomSession(secretKey: secretKey, phantomPublicKey: phantomKey, session: session, walletAddress: address)
+        return PhantomSession(secretKey: secretKey, phantomPublicKey: phantomKey, session: session, walletAddress: address, devnet: devnet)
     }
 
     static func response(from url: URL, session: PhantomSession) throws -> [String: String] {
@@ -111,6 +117,7 @@ enum PhantomLink {
             // 4001: the user declined. 4100: the session is no longer authorized.
             if code == "4001" { throw PhantomError.cancelled }
             if code == "4100" { throw PhantomError.unauthorized }
+            if code == "-32603" { throw PhantomError.internalError }
             throw PhantomError.rejected(query["errorMessage"] ?? code)
         }
         return query
@@ -131,6 +138,8 @@ enum SolanaRPCError: LocalizedError {
     case failed(String)
     case transactionFailed
     case notLanded
+    case expired
+    case insufficientFunds
 
     var errorDescription: String? {
         switch self {
@@ -138,6 +147,9 @@ enum SolanaRPCError: LocalizedError {
         case .failed(let message): "Ошибка сети Solana: \(message)"
         case .transactionFailed: "Транзакция не прошла в сети Solana"
         case .notLanded: "Транзакция не дошла до сети Solana. Попробуй ещё раз"
+        case .expired: "Подпись заняла слишком много времени, и транзакция устарела. Попробуй ещё раз"
+        case .insufficientFunds:
+            "На кошельке не хватает тестовых SOL в сети Devnet. Их бесплатно выдаёт faucet.solana.com."
         }
     }
 }
@@ -179,6 +191,22 @@ struct SolanaRPC {
         let result = try await call("getBalance", [address, ["commitment": "confirmed"]])
         guard let lamports = value(result) as? NSNumber else { throw SolanaRPCError.unavailable }
         return lamports.uint64Value
+    }
+
+    /// Submits a fully signed transaction and returns its signature.
+    func send(_ transaction: Data) async throws -> String {
+        do {
+            let result = try await call("sendTransaction", [transaction.base64EncodedString(),
+                                                           ["encoding": "base64", "preflightCommitment": "confirmed"]])
+            guard let signature = result as? String else { throw SolanaRPCError.unavailable }
+            return signature
+        } catch SolanaRPCError.failed(let message) {
+            if message.localizedCaseInsensitiveContains("blockhash not found") { throw SolanaRPCError.expired }
+            if message.localizedCaseInsensitiveContains("insufficient") || message.localizedCaseInsensitiveContains("debit an account") {
+                throw SolanaRPCError.insufficientFunds
+            }
+            throw SolanaRPCError.failed(message)
+        }
     }
 
     /// nil while the network has not seen the signature yet; throws when the transaction failed.

@@ -31,7 +31,7 @@ struct WalletActivitySheet: View {
         case .progress: ProgressView().controlSize(.large)
         case .confirmWallet: Image(systemName: "signature").foregroundStyle(Palette.accent)
         case .success: Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
-        case .failure: Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(Palette.accent)
+        case .failure, .devnetBlocked: Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(Palette.accent)
         }
     }
 
@@ -41,6 +41,8 @@ struct WalletActivitySheet: View {
         case .progress(let text), .success(let text), .failure(let text): text
         case .confirmWallet(let address):
             "Кошелёк \(shortWallet(address)) подключён. Остался один шаг: подпиши сообщение, чтобы подтвердить, что он твой. Это бесплатно и ничего не списывает."
+        case .devnetBlocked:
+            "Phantom не выполнил запрос в сети Devnet. Обычно это значит, что в нём выключен Testnet Mode (Настройки → Developer Settings). Включи его и повтори — или продолжи без него: кошелёк подключится заново."
         }
     }
 
@@ -63,6 +65,9 @@ struct WalletActivitySheet: View {
             }
         case .failure:
             Button("Понятно") { wallet.cancel() }.buttonStyle(PrimaryButtonStyle())
+        case .devnetBlocked:
+            Button("Продолжить без Devnet") { wallet.continueWithoutDevnet() }.buttonStyle(PrimaryButtonStyle())
+            Button("Отмена") { wallet.cancel() }
         }
     }
 }
