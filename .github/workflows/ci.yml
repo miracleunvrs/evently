@@ -24,7 +24,8 @@ jobs:
           bundler-cache: true
           working-directory: backend
       - run: sudo apt-get update && sudo apt-get install -y libsodium23
-      - run: bundle exec rails db:prepare
+      # db:prepare would also seed the demo events into the test database
+      - run: bundle exec rails db:schema:load
         working-directory: backend
         env:
           TEST_DATABASE_URL: postgresql://evently:evently@127.0.0.1:5432/evently
