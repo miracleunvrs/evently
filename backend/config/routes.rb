@@ -5,6 +5,7 @@ Rails.application.routes.draw do
   scope "/auth" do
     post "/register", to: "auth#register"
     post "/login", to: "auth#login"
+    post "/google", to: "auth#google"
     post "/refresh", to: "auth#refresh"
     get "/me", to: "auth#me"
   end
