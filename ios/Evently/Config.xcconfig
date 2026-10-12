@@ -1,0 +1,4 @@
+EVENTLY_API_URL = https:/$()/evently-api-production-1056.up.railway.app
+// iOS OAuth client ID from Google Cloud Console (public identifier, not a secret)
+GOOGLE_IOS_CLIENT_ID = 767882385413-2vc39fer33r262rokvbjf0k0v00tcdul.apps.googleusercontent.com
+#include? "../Local.xcconfig"

@@ -8,7 +8,9 @@ class User < ApplicationRecord
 
   validates :name, presence: true, length: { in: 2..80 }
   validates :email, presence: true, length: { maximum: 254 }, format: { with: URI::MailTo::EMAIL_REGEXP }, uniqueness: { case_sensitive: false }
-  validates :password_hash, presence: true
+  # Google-only accounts have no password; BCrypt rejects the empty hash on password login.
+  validates :password_hash, presence: true, unless: :google_sub?
+  validates :google_sub, uniqueness: true, allow_nil: true
   validates :role, inclusion: { in: ROLES }
 
   def password=(raw)

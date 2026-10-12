@@ -28,6 +28,24 @@ class AuthController < ApplicationController
     render json: tokens(user)
   end
 
+  def google
+    payload = Auth::GoogleIdToken.new.verify!(params.require(:id_token))
+    email = payload.fetch("email").to_s.downcase.strip
+    user = User.find_by(google_sub: payload.fetch("sub")) || User.find_by(email: email)
+    created = user.nil?
+    user ||= User.new(email: email, name: google_name(payload, email))
+    # Google confirmed the address, so an existing password account with it is the same person.
+    user.google_sub ||= payload.fetch("sub")
+    user.save! if user.changed?
+    render json: tokens(user), status: created ? :created : :ok
+  rescue Auth::GoogleIdToken::NotConfigured
+    render json: { code: "google_not_configured", detail: "Вход через Google пока не настроен" }, status: :service_unavailable
+  rescue Auth::GoogleIdToken::Invalid
+    render json: { code: "invalid_google_token", detail: "Не удалось подтвердить аккаунт Google" }, status: :unauthorized
+  rescue ActiveRecord::RecordNotUnique
+    render json: { code: "google_conflict", detail: "Не удалось войти через Google, попробуйте ещё раз" }, status: :conflict
+  end
+
   def refresh
     raw = params[:refresh_token].presence
     return render json: { detail: "refresh token required" }, status: :unprocessable_entity unless raw
@@ -46,6 +64,11 @@ class AuthController < ApplicationController
 
   def registration_error(code, detail)
     render json: { code: code, detail: detail }, status: :unprocessable_entity
+  end
+
+  def google_name(payload, email)
+    name = payload["name"].to_s.squish.first(80)
+    name.length >= 2 ? name : email.split("@").first.ljust(2, "_").first(80)
   end
 
   def tokens(user)
