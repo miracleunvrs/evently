@@ -2,11 +2,33 @@ import SwiftUI
 
 @main
 struct EventlyApp: App {
-    @StateObject private var api = EventlyAPI()
+    @StateObject private var api: EventlyAPI
+    @StateObject private var wallet: WalletCoordinator
+
+    init() {
+        let api = EventlyAPI()
+        _api = StateObject(wrappedValue: api)
+        _wallet = StateObject(wrappedValue: WalletCoordinator(api: api))
+    }
+
     var body: some Scene {
         WindowGroup {
-            EventlyHome().environmentObject(api).tint(Palette.ink).task { await api.refresh() }
+            EventlyHome().environmentObject(api).environmentObject(wallet).tint(Palette.ink)
+                .task { await start() }
+                // Phantom answers a request by opening evently://phantom/…
+                .onOpenURL { wallet.handle($0) }
         }
+    }
+
+    private func start() async {
+        #if targetEnvironment(simulator)
+        // End-to-end runs sign in through the launch environment instead of typing into the form.
+        let environment = ProcessInfo.processInfo.environment
+        if let email = environment["EVENTLY_TEST_EMAIL"], let password = environment["EVENTLY_TEST_PASSWORD"] {
+            try? await api.login(email: email, password: password)
+        }
+        #endif
+        await api.refresh()
     }
 }
 
@@ -37,6 +59,7 @@ enum Palette {
 }
 
 struct EventlyHome: View {
+    @EnvironmentObject private var wallet: WalletCoordinator
     @State private var auth = false
     var body: some View {
         TabView {
@@ -47,6 +70,9 @@ struct EventlyHome: View {
         }
         .environment(\.openAuth, { auth = true })
         .sheet(isPresented: $auth) { AuthView() }
+        .sheet(isPresented: Binding(get: { wallet.activity != nil }, set: { if !$0 { wallet.cancel() } })) {
+            if let activity = wallet.activity { WalletActivitySheet(activity: activity) }
+        }
     }
 }
 

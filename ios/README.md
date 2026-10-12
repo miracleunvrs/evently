@@ -2,7 +2,7 @@
 
 `Evently/Evently.xcodeproj` is a native SwiftUI app for iPhone and iPad (iOS 17+). It uses the Evently Rails API directly and has no embedded website or WebView. The default API is `https://evently-api-production-1056.up.railway.app`, so the app does not require the Mac to run.
 
-The app currently includes a searchable event catalogue, event details, sign-in and registration (email or Google), favorites, existing ticket display with native QR generation, waitlist, profile, organizer event list and stats, draft creation, and an admin overview. Auth tokens are stored in the iOS Keychain. Event cover images are bundled as native assets.
+The app includes a searchable event catalogue, event details, sign-in and registration (email or Google), favorites, the waitlist, profile, organizer event list with stats and guests, draft creation, and an admin overview. Tickets are real: the app connects Phantom, mints the non-transferable Token-2022 ticket on Solana Devnet and shows its QR, and organizers check guests in by QR scan or code. Auth tokens and the Phantom session are stored in the iOS Keychain. Event cover images are bundled as native assets.
 
 Open the Xcode project, select your Apple Development team and device, then press Run. The local `ios/Local.xcconfig` file can hold a personal `DEVELOPMENT_TEAM` and optional `EVENTLY_API_URL` override; it is ignored by Git. The API URL can also be changed in Profile → API address. Only HTTPS or private-network HTTP addresses are accepted.
 
@@ -24,4 +24,25 @@ xcrun devicectl device install app --device DEVICE_UDID ios/build/Build/Products
 xcrun devicectl device process launch --device DEVICE_UDID com.miracleunvrs.evently
 ```
 
-New Web3 ticket registration and blockchain check-in require native Phantom signing. They are not enabled in this build. The app only shows a QR for a ticket whose `blockchain_status` is `confirmed`; it does not generate unverified passes. Invitation design, event publishing, and the full organizer workflow remain in the web product while the native client is developed. A Development-signed build may require trusting the developer profile under iPhone Settings → General → VPN & Device Management, and the personal provisioning profile expires after seven days.
+## Phantom and Solana
+
+The app talks to Phantom through its deeplinks (`https://phantom.app/ul/v1/…`) and receives the answers on the `evently://phantom/…` URL scheme. Nothing is embedded: no WebView and no SDK.
+
+- `SolanaKit.swift` — Base58, NaCl box (X25519 + XSalsa20-Poly1305, the encryption Phantom deeplinks use), the Ed25519 curve check for program-derived addresses, transaction serialization, and the two Evently transactions: the ticket mint (same instructions as `lib/web3.ts`) and the check-in memo.
+- `PhantomLink.swift` — the deeplink protocol (connect, signMessage, signAndSendTransaction) and the Solana JSON-RPC calls.
+- `Wallet.swift` — `WalletCoordinator`, which runs each round trip. The step in flight is stored in the Keychain, so an answer is finished correctly even if iOS restarted the app while the user was in Phantom.
+
+What the user needs: the Phantom app with Testnet Mode on (Solana Devnet) and about 0.005 Devnet SOL for the mint; a check-in costs the organizer one transaction fee. Connecting takes two visits to Phantom the first time: approve the connection, then sign a free message that proves the wallet is theirs.
+
+### Tests
+
+```sh
+sh ios/Tests/run.sh                                           # 496 checks, no network
+python3 ios/Tests/simulate-devnet.py <funded devnet address>  # runs the ticket transaction on Devnet without sending it
+```
+
+`run.sh` compiles `SolanaKit.swift` and `PhantomLink.swift` for macOS and checks them against `vectors.json`: Base58, curve points and associated token addresses from `@solana/web3.js`, NaCl box from libsodium, and both transactions, which `@solana/web3.js` then parses again. `simulate-devnet.py` asks the cluster to execute the ticket transaction with signature checks off and applies the same checks the Rails API makes (Token-2022, non-transferable, supply of one, authority removed, owner holds it, memo).
+
+Phantom cannot be installed in the Simulator. `fake-phantom.rb` is a stand-in wallet that answers the same deeplink requests over HTTP using libsodium; a Simulator build started with `EVENTLY_TEST_WALLET` uses it instead of opening Phantom (see the header of that file, including the mock-chain mode for when no test SOL is available). These hooks, and sign-in through `EVENTLY_TEST_EMAIL`/`EVENTLY_TEST_PASSWORD`, are compiled into Simulator builds only.
+
+Invitation design, event publishing, and the full organizer workflow remain in the web product. A Development-signed build may require trusting the developer profile under iPhone Settings → General → VPN & Device Management, and the personal provisioning profile expires after seven days.
