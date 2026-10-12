@@ -156,7 +156,7 @@ func phantomRedirect(_ method: String, _ fields: [String: Any], key: [UInt8], ex
 let appSecret = PhantomLink.newSecretKey()
 let phantomSecret = PhantomLink.newSecretKey()
 let phantomPublic = try PhantomLink.publicKey(for: phantomSecret)
-let connectURL = try PhantomLink.connect(secretKey: appSecret)
+let connectURL = try PhantomLink.connect(secretKey: appSecret, devnet: true)
 let connectQuery = query(connectURL)
 expect(connectURL.absoluteString.hasPrefix("https://phantom.app/ul/v1/connect?"), "connect opens Phantom's universal link")
 expect(connectQuery["cluster"] == "devnet" && connectQuery["redirect_link"] == "evently://phantom/connect", "connect asks for devnet and our redirect")
@@ -165,17 +165,20 @@ let phantomKey = try NaClBox.sharedKey(secretKey: phantomSecret, peerPublicKey: 
 let connected = try PhantomLink.session(
     from: phantomRedirect("connect", ["public_key": ticket.owner, "session": "session-token"], key: phantomKey,
                           extra: ["phantom_encryption_public_key": Base58.encode(phantomPublic)]),
-    secretKey: appSecret)
+    secretKey: appSecret, devnet: true)
+expect(!query(try PhantomLink.connect(secretKey: appSecret, devnet: false)).keys.contains("cluster"), "a plain connection leaves the cluster to Phantom")
+expect(connected.usesDevnet, "the session remembers it asked for devnet")
 expect(connected.walletAddress == ticket.owner && connected.session == "session-token" && connected.phantomPublicKey == phantomPublic, "connect answer becomes a session")
 expect(PhantomLink.method(of: URL(string: "evently://phantom/signMessage?x=1")!) == .signMessage, "redirect names its request")
 expect(PhantomLink.method(of: URL(string: "https://phantom/connect")!) == nil && PhantomLink.method(of: URL(string: "evently://other/connect")!) == nil, "foreign links are ignored")
 
-let signURL = try PhantomLink.request(.signMessage, payload: ["message": Base58.encode(Data("hello".utf8)), "display": "utf8"], session: connected)
+let signURL = try PhantomLink.request(.signMessage, payload: ["message": Base58.encode(Data("hello".utf8))], session: connected)
 let signQuery = query(signURL)
 expect(signURL.path == "/ul/v1/signMessage" && signQuery["redirect_link"] == "evently://phantom/signMessage", "sign request path and redirect")
 let payload = NaClBox.open(Base58.decode(signQuery["payload"]!)!, nonce: Base58.decode(signQuery["nonce"]!)!, key: phantomKey)
     .flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: String] }
-expect(payload == ["message": Base58.encode(Data("hello".utf8)), "display": "utf8", "session": "session-token"], "Phantom can read the request payload")
+expect(payload == ["message": Base58.encode(Data("hello".utf8)), "session": "session-token"], "Phantom can read the request payload")
+expect(try PhantomLink.request(.signTransaction, payload: ["transaction": "tx"], session: connected).path == "/ul/v1/signTransaction", "transactions are only signed by Phantom")
 let secondNonce = query(try PhantomLink.request(.signMessage, payload: [:], session: connected))["nonce"]
 expect(secondNonce != signQuery["nonce"], "every request uses a fresh nonce")
 
@@ -186,7 +189,8 @@ func failure(_ url: URL) -> PhantomError? {
 }
 expect(failure(URL(string: "evently://phantom/signMessage?errorCode=4001&errorMessage=User%20rejected")!) == .cancelled, "a declined request is a cancellation")
 expect(failure(URL(string: "evently://phantom/signMessage?errorCode=4100&errorMessage=Unauthorized")!) == .unauthorized, "a dead session is reported as such")
-expect(failure(URL(string: "evently://phantom/signMessage?errorCode=-32603&errorMessage=Boom")!) == .rejected("Boom"), "other errors keep Phantom's message")
+expect(failure(URL(string: "evently://phantom/signMessage?errorCode=-32603&errorMessage=Unexpected+error")!) == .internalError, "Phantom's internal error is told apart")
+expect(failure(URL(string: "evently://phantom/signMessage?errorCode=-32000&errorMessage=Boom")!) == .rejected("Boom"), "other errors keep Phantom's message")
 let strangerKey = try NaClBox.sharedKey(secretKey: PhantomLink.newSecretKey(), peerPublicKey: phantomPublic)
 expect(failure(phantomRedirect("signMessage", ["signature": "5sig"], key: strangerKey)) == .invalidResponse, "an answer sealed with another key is rejected")
 
