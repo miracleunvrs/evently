@@ -15,6 +15,12 @@ private struct EventCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             Cover(event: event, height: 180)
+                .overlay(alignment: .topTrailing) {
+                    if event.ended {
+                        Text("Завершено").font(.caption.bold()).padding(.horizontal, 12).padding(.vertical, 6)
+                            .foregroundStyle(.white).background(.black.opacity(0.65), in: Capsule()).padding(12)
+                    }
+                }
             VStack(alignment: .leading, spacing: 8) {
                 Text((event.category ?? "Событие").uppercased())
                     .font(.caption.bold()).tracking(1).foregroundStyle(Palette.accent)
@@ -40,6 +46,12 @@ struct DiscoverView: View {
                 .localizedCaseInsensitiveContains(search))
         }
     }
+    private var upcoming: [Event] {
+        filtered.filter { !$0.ended }.sorted { ($0.date ?? .distantFuture) < ($1.date ?? .distantFuture) }
+    }
+    private var past: [Event] {
+        filtered.filter(\.ended).sorted { ($0.date ?? .distantPast) > ($1.date ?? .distantPast) }
+    }
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
@@ -58,16 +70,29 @@ struct DiscoverView: View {
                         }
                     }
                 }
-                HStack { Text("Ближайшие события").font(.title2.bold()); Spacer(); Text("\(filtered.count)") }
+                HStack { Text("Ближайшие события").font(.title2.bold()); Spacer(); Text("\(upcoming.count)") }
                 if api.loading && api.events.isEmpty { ProgressView().frame(maxWidth: .infinity) }
                 if let error = api.error, api.events.isEmpty {
                     ContentUnavailableView("Не удалось загрузить", systemImage: "wifi.exclamationmark", description: Text(error))
                     Button("Повторить") { Task { await api.refresh() } }
                 }
-                ForEach(filtered) { event in
+                ForEach(upcoming) { event in
                     NavigationLink { EventDetailView(event: event) } label: { EventCard(event: event) }.buttonStyle(.plain)
                 }
-                if filtered.isEmpty && !api.loading && api.error == nil { ContentUnavailableView.search(text: search) }
+                if upcoming.isEmpty && !api.loading && api.error == nil {
+                    if filtered.isEmpty && !search.isEmpty {
+                        ContentUnavailableView.search(text: search)
+                    } else {
+                        ContentUnavailableView("Пока ничего не запланировано", systemImage: "calendar",
+                                               description: Text("Новые события появятся здесь."))
+                    }
+                }
+                if !past.isEmpty {
+                    Text("Прошедшие").font(.title2.bold()).padding(.top, 8)
+                    ForEach(past) { event in
+                        NavigationLink { EventDetailView(event: event) } label: { EventCard(event: event) }.buttonStyle(.plain)
+                    }
+                }
             }.padding(18)
         }
         .background(Palette.paper)
@@ -79,58 +104,45 @@ struct DiscoverView: View {
 
 struct EventDetailView: View {
     @EnvironmentObject private var api: EventlyAPI
+    @EnvironmentObject private var wallet: WalletCoordinator
     @Environment(\.openAuth) private var openAuth
     let event: Event
     @State private var message: String?
     @State private var busy = false
+    /// The catalogue reloads after a registration; the copy this screen was pushed with would keep the old seat count.
+    private var current: Event { api.events.first { $0.id == event.id } ?? event }
+    private var ticket: Ticket? { api.tickets.first { $0.eventId == event.id } }
+    private var waitlisted: WaitlistEntry? { api.waitlist.first { $0.eventId == event.id } }
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
-                Cover(event: event, height: 280)
+                Cover(event: current, height: 280)
                 VStack(alignment: .leading, spacing: 18) {
                     HStack {
-                        Text((event.category ?? "Событие").uppercased()).font(.caption.bold()).foregroundStyle(Palette.accent)
+                        Text((current.category ?? "Событие").uppercased()).font(.caption.bold()).foregroundStyle(Palette.accent)
                         Spacer()
                         Button {
                             if api.user == nil { openAuth(); return }
                             Task {
-                                do { try await api.toggleFavorite(event) }
+                                do { try await api.toggleFavorite(current) }
                                 catch { message = error.localizedDescription }
                             }
                         } label: {
-                            Image(systemName: api.favorites.contains(event.id) ? "heart.fill" : "heart")
+                            Image(systemName: api.favorites.contains(current.id) ? "heart.fill" : "heart")
                                 .font(.title2).foregroundStyle(Palette.accent)
                         }.accessibilityLabel("Избранное")
                     }
-                    Text(event.title).font(.system(size: 36, weight: .black, design: .rounded))
-                    Text(event.description).foregroundStyle(.secondary)
+                    Text(current.title).font(.system(size: 36, weight: .black, design: .rounded))
+                    Text(current.description).foregroundStyle(.secondary)
                     VStack(alignment: .leading, spacing: 12) {
-                        Label(event.dateLabel, systemImage: "calendar")
-                        Label("\(event.place), \(event.city)", systemImage: "mappin.and.ellipse")
-                        Label(event.price == 0 ? "Вход бесплатный" : "\(event.price) ₽", systemImage: "ticket")
-                        Label(event.available > 0 ? "Осталось мест: \(event.available)" : "Мест нет", systemImage: "person.2")
+                        Label(current.dateLabel, systemImage: "calendar")
+                        Label("\(current.place), \(current.city)", systemImage: "mappin.and.ellipse")
+                        Label(current.price == 0 ? "Вход бесплатный" : "\(current.price) ₸", systemImage: "ticket")
+                        Label(current.available > 0 ? "Осталось мест: \(current.available)" : "Мест нет", systemImage: "person.2")
                     }.font(.subheadline).padding(18).frame(maxWidth: .infinity, alignment: .leading)
                         .background(Palette.card, in: RoundedRectangle(cornerRadius: 18))
-                    if event.ended {
-                        Text("Событие завершилось").foregroundStyle(.secondary)
-                    } else if event.available == 0 {
-                        Button(busy ? "Добавляем…" : "В лист ожидания") {
-                            if api.user == nil { openAuth(); return }
-                            busy = true
-                            Task {
-                                defer { busy = false }
-                                do { try await api.joinWaitlist(event); message = "Ты в листе ожидания" }
-                                catch { message = error.localizedDescription }
-                            }
-                        }.buttonStyle(PrimaryButtonStyle()).disabled(busy)
-                    } else {
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("Регистрация через Phantom").font(.headline)
-                            Text("Подключение мобильного кошелька и выпуск Web3-билета ещё не доступны. Уже выпущенные билеты можно открыть во вкладке «Билеты».")
-                                .font(.subheadline).foregroundStyle(.secondary)
-                        }.padding(18).frame(maxWidth: .infinity, alignment: .leading)
-                            .background(Palette.card, in: RoundedRectangle(cornerRadius: 18))
-                    }
+                    action
                 }.padding(.horizontal, 18)
             }.padding(.bottom, 30)
         }
@@ -138,6 +150,46 @@ struct EventDetailView: View {
         .alert("Evently", isPresented: Binding(get: { message != nil }, set: { if !$0 { message = nil } })) {
             Button("Понятно", role: .cancel) { message = nil }
         } message: { Text(message ?? "") }
+    }
+
+    @ViewBuilder private var action: some View {
+        if let ticket {
+            if ticket.needsMint {
+                note("Место за тобой", "Осталось выпустить билет в Solana: подпиши транзакцию в Phantom.")
+                Button("Выпустить билет") { wallet.issueTicket(eventId: current.id) }.buttonStyle(PrimaryButtonStyle())
+            } else {
+                NavigationLink { TicketDetailView(ticket: ticket) } label: { Label("Открыть билет", systemImage: "ticket") }
+                    .buttonStyle(PrimaryButtonStyle())
+            }
+        } else if current.ended {
+            Text("Событие завершилось").foregroundStyle(.secondary)
+        } else if let waitlisted {
+            note("Ты в листе ожидания", "Твой номер — \(waitlisted.position). Когда место освободится, билет появится во вкладке «Билеты».")
+        } else if current.available == 0 {
+            Button(busy ? "Добавляем…" : "В лист ожидания") {
+                if api.user == nil { openAuth(); return }
+                busy = true
+                Task {
+                    defer { busy = false }
+                    do { try await api.joinWaitlist(current) }
+                    catch { message = error.localizedDescription }
+                }
+            }.buttonStyle(PrimaryButtonStyle()).disabled(busy)
+        } else {
+            Button("Получить билет") {
+                if api.user == nil { openAuth() } else { wallet.issueTicket(eventId: current.id) }
+            }.buttonStyle(PrimaryButtonStyle())
+            Text("Билет — непередаваемый токен в Solana Devnet. Понадобится кошелёк Phantom и немного тестовых SOL.")
+                .font(.footnote).foregroundStyle(.secondary)
+        }
+    }
+
+    private func note(_ title: String, _ text: String) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(title).font(.headline)
+            Text(text).font(.subheadline).foregroundStyle(.secondary)
+        }.padding(18).frame(maxWidth: .infinity, alignment: .leading)
+            .background(Palette.card, in: RoundedRectangle(cornerRadius: 18))
     }
 }
 
@@ -196,7 +248,8 @@ struct TicketsView: View {
                             Image(systemName: "ticket.fill").font(.title2).foregroundStyle(Palette.accent)
                             VStack(alignment: .leading) {
                                 Text(ticket.eventTitle).font(.headline)
-                                Text(ticket.event.dateLabel).font(.caption).foregroundStyle(.secondary)
+                                Text(ticket.needsMint ? "Ждёт выпуска в Solana" : ticket.event.dateLabel)
+                                    .font(.caption).foregroundStyle(ticket.needsMint ? Palette.accent : .secondary)
                             }
                             Spacer(); Image(systemName: "chevron.right")
                         }.padding(18).background(Palette.card, in: RoundedRectangle(cornerRadius: 18))
@@ -214,45 +267,56 @@ struct TicketsView: View {
 
 struct TicketDetailView: View {
     @EnvironmentObject private var api: EventlyAPI
+    @EnvironmentObject private var wallet: WalletCoordinator
     @Environment(\.dismiss) private var dismiss
     let ticket: Ticket
     @State private var confirming = false
     @State private var error: String?
+    /// Minting changes the ticket while this screen is open.
+    private var current: Ticket { api.tickets.first { $0.id == ticket.id } ?? ticket }
+
     var body: some View {
         ScrollView {
             VStack(spacing: 18) {
-                Cover(event: ticket.event, height: 180)
+                Cover(event: current.event, height: 180)
                 VStack(spacing: 18) {
-                    Text(ticket.eventTitle).font(.title.bold()).multilineTextAlignment(.center)
-                    Text(ticket.event.dateLabel).foregroundStyle(.secondary)
-                    if ticket.blockchainStatus == "confirmed" {
-                        QRImage(value: ticket.code).frame(width: 220, height: 220)
+                    Text(current.eventTitle).font(.title.bold()).multilineTextAlignment(.center)
+                    Text(current.event.dateLabel).foregroundStyle(.secondary)
+                    if current.needsMint {
+                        Label("Билет ещё не выпущен", systemImage: "clock.arrow.circlepath").font(.headline)
+                        Text(current.blockchainStatus == "failed"
+                             ? "Прошлая попытка не прошла проверку в Solana. Выпусти билет ещё раз."
+                             : "Место за тобой. QR появится, когда билет будет выпущен в Solana.")
+                            .font(.subheadline).foregroundStyle(.secondary).multilineTextAlignment(.center)
+                        Button("Выпустить билет в Phantom") { wallet.issueTicket(eventId: current.eventId) }
+                            .buttonStyle(PrimaryButtonStyle())
+                    } else {
+                        QRImage(value: current.code).frame(width: 220, height: 220)
                             .padding(12).background(Color.white, in: RoundedRectangle(cornerRadius: 12))
-                        Text(ticket.code).font(.system(.headline, design: .monospaced))
-                        Text(ticket.status == "used" ? "Уже использован" : "Покажи QR на входе")
-                        if let address = ticket.explorerUrl, let url = URL(string: address), url.scheme == "https" {
+                            .opacity(current.status == "used" ? 0.35 : 1)
+                        Text(current.code).font(.system(.headline, design: .monospaced))
+                        Text(current.status == "used" ? "Уже использован" : "Покажи QR на входе")
+                        if let address = current.explorerUrl, let url = URL(string: address), url.scheme == "https" {
                             Link("Проверить в Solana Explorer", destination: url)
                         }
-                    } else {
-                        Label("Ожидает подтверждения в Solana", systemImage: "clock.arrow.circlepath")
-                        Text("QR появится после подтверждения блокчейн-транзакции.")
-                            .font(.subheadline).foregroundStyle(.secondary)
                     }
-                    if ticket.status != "used" {
+                    if current.status != "used" {
+                        // On the button, so the confirmation points at it instead of floating at the top of the screen.
                         Button("Отменить регистрацию", role: .destructive) { confirming = true }
+                            .confirmationDialog("Отменить регистрацию?", isPresented: $confirming, titleVisibility: .visible) {
+                                Button("Отменить регистрацию", role: .destructive) {
+                                    Task {
+                                        do { try await api.cancel(current); dismiss() }
+                                        catch { self.error = error.localizedDescription }
+                                    }
+                                }
+                                Button("Оставить билет", role: .cancel) {}
+                            }
                     }
                 }.padding(24).frame(maxWidth: .infinity)
                     .background(Palette.card, in: RoundedRectangle(cornerRadius: 22)).padding(.horizontal, 18)
             }
         }.background(Palette.paper).navigationTitle("Мой билет")
-            .confirmationDialog("Отменить регистрацию?", isPresented: $confirming) {
-                Button("Отменить регистрацию", role: .destructive) {
-                    Task {
-                        do { try await api.cancel(ticket); dismiss() }
-                        catch { self.error = error.localizedDescription }
-                    }
-                }
-            }
             .alert("Ошибка", isPresented: Binding(get: { error != nil }, set: { if !$0 { error = nil } })) {
                 Button("Понятно", role: .cancel) { error = nil }
             } message: { Text(error ?? "") }
@@ -275,7 +339,8 @@ struct ProfileView: View {
                             .font(.caption.bold())
                     }.padding(22).frame(maxWidth: .infinity, alignment: .leading)
                         .background(Palette.card, in: RoundedRectangle(cornerRadius: 22))
-                    if user.role == "organizer" || user.role == "admin" {
+                    WalletCard()
+                    if user.managesEvents {
                         NavigationLink { OrganizerView() } label: { Label("Кабинет организатора", systemImage: "slider.horizontal.3") }
                             .buttonStyle(PrimaryButtonStyle())
                     }
@@ -362,7 +427,7 @@ struct AuthView: View {
                             Image("GoogleLogo").resizable().frame(width: 20, height: 20)
                             Text(googling ? "Входим…" : "Продолжить с Google")
                         }
-                    }.buttonStyle(GoogleButtonStyle()).disabled(loading)
+                    }.buttonStyle(OutlineButtonStyle()).disabled(loading)
                     Button(registering ? "Уже есть аккаунт? Войти" : "Нет аккаунта? Зарегистрироваться") {
                         registering.toggle(); error = nil
                     }.frame(maxWidth: .infinity)
@@ -407,7 +472,7 @@ struct PrimaryButtonStyle: ButtonStyle {
     }
 }
 
-struct GoogleButtonStyle: ButtonStyle {
+struct OutlineButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label.font(.headline).frame(maxWidth: .infinity).padding(16)
             .foregroundStyle(Palette.ink).background(Palette.card, in: RoundedRectangle(cornerRadius: 16))
@@ -423,12 +488,14 @@ struct OrganizerView: View {
         ScrollView {
             VStack(spacing: 14) {
                 Button("Создать черновик", systemImage: "plus") { creating = true }.buttonStyle(PrimaryButtonStyle())
+                NavigationLink { CheckInView() } label: { Label("Проверка билетов", systemImage: "qrcode.viewfinder") }
+                    .buttonStyle(OutlineButtonStyle())
                 ForEach(api.managed) { event in
                     NavigationLink { ManagedEventView(event: event) } label: {
                         HStack {
                             VStack(alignment: .leading, spacing: 4) {
                                 Text(event.title).font(.headline)
-                                Text("\(event.status) · \(event.dateLabel)").font(.caption).foregroundStyle(.secondary)
+                                Text("\(event.statusLabel) · \(event.dateLabel)").font(.caption).foregroundStyle(.secondary)
                             }
                             Spacer(); Image(systemName: "chevron.right")
                         }.padding(18).background(Palette.card, in: RoundedRectangle(cornerRadius: 18))
@@ -442,6 +509,7 @@ struct OrganizerView: View {
 
 struct ManagedEventView: View {
     @EnvironmentObject private var api: EventlyAPI
+    @EnvironmentObject private var wallet: WalletCoordinator
     let event: Event
     @State private var stats: EventStats?
     @State private var guests: [Guest] = []
@@ -460,18 +528,28 @@ struct ManagedEventView: View {
                 }
                 if let error { Text(error).foregroundStyle(.red) }
                 Text("Гости").font(.title2.bold())
+                if guests.isEmpty && error == nil { Text("Пока никто не зарегистрировался").foregroundStyle(.secondary) }
                 ForEach(guests) { guest in
                     HStack {
                         VStack(alignment: .leading) {
                             Text(guest.name).font(.headline)
                             Text(guest.email).font(.caption).foregroundStyle(.secondary)
                         }
-                        Spacer(); Text(guest.used ? "Пришёл" : guest.status).font(.caption)
+                        Spacer()
+                        if let code = guest.code, guest.canCheckIn {
+                            Button("Отметить") { wallet.checkIn(code: code) }.font(.subheadline.bold()).foregroundStyle(Palette.accent)
+                        } else {
+                            Text(guest.statusLabel).font(.caption)
+                        }
                     }.padding(14).background(Palette.card, in: RoundedRectangle(cornerRadius: 14))
                 }
             }.padding(18)
         }.background(Palette.paper).navigationTitle("Статистика")
             .task { await load() }.refreshable { await load() }
+            .onChange(of: wallet.activity) { _, activity in
+                // A check-in started from this list changes it.
+                if case .success = activity?.phase { Task { await load() } }
+            }
     }
     private func metric(_ title: String, _ value: Int) -> some View {
         VStack { Text("\(value)").font(.title.bold()); Text(title).font(.caption) }
@@ -505,7 +583,7 @@ struct CreateEventView: View {
                 }
                 Section("Когда и сколько") {
                     DatePicker("Дата", selection: $startsAt, in: Date()..., displayedComponents: [.date, .hourAndMinute])
-                    Stepper("Мест: \(capacity)", value: $capacity, in: 1...100_000)
+                    Stepper("Мест: \(capacity)", value: $capacity, in: 1...5000)
                 }
                 if let error { Text(error).foregroundStyle(.red) }
                 Text("Создаётся черновик. Публикация и приглашения пока доступны в веб-кабинете.")

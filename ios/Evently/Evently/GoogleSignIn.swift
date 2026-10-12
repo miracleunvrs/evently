@@ -73,14 +73,21 @@ final class GoogleSignIn: NSObject, ASWebAuthenticationPresentationContextProvid
     private func authorize(_ url: URL, scheme: String) async throws -> URL? {
         defer { session = nil }
         return try await withCheckedThrowingContinuation { continuation in
+            // A session that fails to start may still report through its completion handler; answer only once.
+            var answered = false
+            func answer(_ result: Result<URL?, Error>) {
+                guard !answered else { return }
+                answered = true
+                continuation.resume(with: result)
+            }
             let session = ASWebAuthenticationSession(url: url, callbackURLScheme: scheme) { callback, error in
-                if let callback { continuation.resume(returning: callback) }
-                else if (error as? ASWebAuthenticationSessionError)?.code == .canceledLogin { continuation.resume(returning: nil) }
-                else { continuation.resume(throwing: GoogleSignInError.failed) }
+                if let callback { answer(.success(callback)) }
+                else if (error as? ASWebAuthenticationSessionError)?.code == .canceledLogin { answer(.success(nil)) }
+                else { answer(.failure(GoogleSignInError.failed)) }
             }
             session.presentationContextProvider = self
             self.session = session
-            if !session.start() { continuation.resume(throwing: GoogleSignInError.failed) }
+            if !session.start() { answer(.failure(GoogleSignInError.failed)) }
         }
     }
 
