@@ -2,12 +2,15 @@
 
 Evently is an event platform with verifiable, non-transferable tickets on Solana Devnet. Organizers publish events and scan QR codes; guests sign in with email, prove ownership of a Phantom wallet, and receive a Token-2022 ticket linked to their registration.
 
+The project includes a web app and a native SwiftUI iOS app. The iOS app supports Google sign-in, event discovery, tickets, and Phantom wallet flows; setup and device requirements are documented in [the iOS README](ios/README.md).
+
 Русская версия находится [ниже](#русская-версия).
 
 ## Live demo
 
 - Web app: [evently-events.miracl3rk.chatgpt.site](https://evently-events.miracl3rk.chatgpt.site/)
 - API health: [evently-api-production-1056.up.railway.app/health](https://evently-api-production-1056.up.railway.app/health)
+- RK1 coursework report: [read the full report](coursework/rk1/docs/report.md) · [weekly assignments and evidence](coursework/rk1/README.md)
 
 The hosted version uses Solana Devnet. Connect Phantom in Devnet mode and use test SOL only.
 
@@ -20,15 +23,17 @@ Each ticket is a Token-2022 mint with a supply of one and the `NonTransferable` 
 ## Architecture
 
 ```text
-React / Vinext PWA ─────── Ruby on Rails API ─────── PostgreSQL
-       │                          │
-       │ Phantom                  │ Solana JSON-RPC
-       └──────────────────────────┴──────────────→ Solana Devnet
+React / Vinext PWA ──┐
+                     ├──── Ruby on Rails API ─────── PostgreSQL
+SwiftUI iOS app ─────┘              │
+       │                            │ Solana JSON-RPC
+       └── Phantom wallet ──────────┴─────────────→ Solana Devnet
                                                      │
                                          Non-transferable Token-2022
 ```
 
 - **React/Vinext** renders the catalog, wallet connection, tickets, QR scanner and organizer tools.
+- **SwiftUI** provides a native iPhone client with Google sign-in and Phantom deeplinks; it calls the same Rails API.
 - **Phantom** owns the user key and signs challenges and mint transactions. Evently never receives a user private key.
 - **Ruby on Rails** owns authentication, capacity, waitlists, registration, ticket verification and check-in rules.
 - **PostgreSQL** stores normal product data and the Solana signature/mint references.
@@ -46,7 +51,7 @@ React / Vinext PWA ─────── Ruby on Rails API ───────
 
 ## Account registration
 
-Guests can create an account from the header or while getting a ticket. The form checks name, email, an 8-character minimum password and matching confirmation; Rails repeats those checks and rejects duplicate addresses. After signing in from an event, the next step explains the Phantom transaction before issuing the ticket. Email ownership verification is not configured yet.
+Guests can create an account from the header or while getting a ticket. The form checks name, email, an 8-character minimum password and matching confirmation; Rails repeats those checks and rejects duplicate addresses. The iOS app also supports Google sign-in using OAuth with PKCE and a verified Google ID token. After signing in from an event, the next step explains the Phantom transaction before issuing the ticket. Email ownership verification for password registration is not configured yet.
 
 ## Local setup
 
@@ -85,6 +90,7 @@ The frontend uses `NEXT_PUBLIC_API_URL` and `NEXT_PUBLIC_SOLANA_RPC_URL`. Rails 
 npm run lint
 npm test
 npm run build
+sh ios/Tests/run.sh
 
 cd backend
 JWT_SECRET=test-secret RAILS_ENV=test bundle exec rails test
@@ -92,10 +98,12 @@ bundle exec rubocop
 ```
 
 The Rails tests cover Phantom-compatible Ed25519 verification and the Solana ticket verifier. Frontend tests cover ticket capacity, cancellation and duplicate check-in rules.
+The iOS checks compare its Solana transaction serialization and Phantom cryptography with known vectors. The app also builds for iOS Simulator in Xcode; a real Phantom wallet and funded Devnet account are needed to exercise the complete device flow.
 
 ## Main folders
 
 - `app/` — Evently interface and PWA screens
+- `ios/` — native SwiftUI client, Google sign-in, Phantom integration, and iOS checks
 - `lib/api.ts` — Rails API client
 - `lib/web3.ts` — Phantom and Token-2022 transaction code
 - `backend/` — Rails API, PostgreSQL migrations and Solana services
@@ -112,10 +120,13 @@ The MVP uses free tickets and Solana Devnet. It does not include crypto payments
 
 Evently — платформа мероприятий с проверяемыми непередаваемыми билетами в Solana Devnet. Организатор создаёт событие и проверяет QR на входе, а гость входит по email, подтверждает Phantom-кошелёк и получает Token-2022 билет.
 
+В репозитории есть веб-версия и [нативное приложение для iPhone](ios/README.md). В приложении доступны вход через Google, афиша, билеты и подключение Phantom.
+
 ### Онлайн-версия
 
 - Сайт: [evently-events.miracl3rk.chatgpt.site](https://evently-events.miracl3rk.chatgpt.site/)
 - Проверка API: [evently-api-production-1056.up.railway.app/health](https://evently-api-production-1056.up.railway.app/health)
+- Отчёт РК1: [полный текст](coursework/rk1/docs/report.md) · [задания по неделям и доказательства](coursework/rk1/README.md)
 
 Онлайн-версия работает в Solana Devnet. В Phantom нужно выбрать Devnet и использовать только тестовый SOL.
 
@@ -127,7 +138,7 @@ PostgreSQL остаётся основной базой продукта. В н�
 
 ### Регистрация аккаунта
 
-Аккаунт можно создать через кнопку «Войти» или при оформлении билета. Форма проверяет имя, email, пароль от 8 символов и его повтор; Rails повторяет проверки и не допускает дублирования email. После входа из карточки события отдельный шаг объясняет подключение Phantom. Подтверждение владения email пока не настроено.
+Аккаунт можно создать через кнопку «Войти» или при оформлении билета. Форма проверяет имя, email, пароль от 8 символов и его повтор; Rails повторяет проверки и не допускает дублирования email. В iOS-приложении также есть вход через Google с проверкой токена на сервере. После входа из карточки события отдельный шаг объясняет подключение Phantom. Подтверждение владения email при регистрации с паролем пока не настроено.
 
 ### Запуск
 

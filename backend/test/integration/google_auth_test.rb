@@ -52,6 +52,15 @@ class GoogleAuthTest < ActionDispatch::IntegrationTest
     assert existing.authenticate("secret123")
   end
 
+  test "does not let a different Google identity take over an already linked email" do
+    existing = User.create!(name: "Original Guest", email: @email, google_sub: "original-sub", role: "visitor")
+    sign_in id_token
+    assert_response :conflict
+    assert_equal "google_conflict", response.parsed_body["code"]
+    assert_equal "original-sub", existing.reload.google_sub
+    assert_equal 1, User.where(email: @email).count
+  end
+
   test "Google-only account cannot be opened with a password" do
     sign_in id_token
     post "/auth/login", params: { email: @email, password: "anything1" }.to_json, headers: json

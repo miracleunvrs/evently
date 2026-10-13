@@ -32,6 +32,10 @@ class AuthController < ApplicationController
     payload = Auth::GoogleIdToken.new.verify!(params.require(:id_token))
     email = payload.fetch("email").to_s.downcase.strip
     user = User.find_by(google_sub: payload.fetch("sub")) || User.find_by(email: email)
+    # A verified email can be reassigned, but a previously linked Google identity cannot.
+    if user&.google_sub.present? && user.google_sub != payload.fetch("sub")
+      return render json: { code: "google_conflict", detail: "Этот аккаунт уже связан с другим Google ID" }, status: :conflict
+    end
     created = user.nil?
     user ||= User.new(email: email, name: google_name(payload, email))
     # Google confirmed the address, so an existing password account with it is the same person.

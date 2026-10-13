@@ -39,7 +39,7 @@ Other notes: a check-in costs the organizer one transaction fee. Connecting take
 ### Tests
 
 ```sh
-sh ios/Tests/run.sh                                           # 496 checks, no network
+sh ios/Tests/run.sh                                           # 500 checks, no network
 python3 ios/Tests/simulate-devnet.py <funded devnet address>  # runs the ticket transaction on Devnet without sending it
 ```
 
