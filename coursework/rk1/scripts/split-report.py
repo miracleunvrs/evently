@@ -52,7 +52,7 @@ for number, name, start_title, end_title in SECTIONS:
     header.runs[0].font.color.rgb = RGBColor(0, 0, 0)
     footer = section.footer.paragraphs[0]
     footer.alignment = WD_ALIGN_PARAGRAPH.RIGHT
-    footer.text = 'Студент ____________________   Группа __________   |   '
+    footer.text = 'Кочетов Руслан   ·   Software Engineering   ·   Русский язык обучения   |   '
     field = OxmlElement('w:fldSimple')
     field.set(qn('w:instr'), 'PAGE')
     footer._p.append(field)
@@ -67,7 +67,7 @@ for number, name, start_title, end_title in SECTIONS:
     first.style = title_style
     report.core_properties.title = f'Evently {start_title}'
     report.core_properties.subject = 'Практическая работа по силлабусу AlmaU 2026'
-    report.core_properties.author = ''
+    report.core_properties.author = 'Кочетов Руслан'
     report.add_page_break()
     report.add_heading('Скриншот проверки', level=1)
     if number == '02':
