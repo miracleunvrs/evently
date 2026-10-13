@@ -59,7 +59,7 @@ for run in footer.runs:
     run.font.size = Pt(9)
 doc.core_properties.title = 'Evently Практические работы и РК1'
 doc.core_properties.subject = 'Работы по силлабусу за недели 1–8'
-doc.core_properties.author = ''
+doc.core_properties.author = 'Кочетов Руслан'
 doc.core_properties.keywords = 'Solana, Rust, Anchor, PDA, Token-2022, Evently, РК1'
 md = []
 
@@ -148,8 +148,9 @@ p('Отчёт по заданиям недель 1–8')
 p('Дисциплина «ИТ-стартап Итоговый проект 1 (DS/ML стартап)»')
 p('Платформа мероприятий с проверяемыми билетами в Solana')
 p('\n')
-p('Студент  __________________________________________')
-p('Группа    __________________________________________')
+p('Студент  Кочетов Руслан')
+p('Группа    Software Engineering')
+p('Язык обучения  Русский')
 p('Преподаватель  Иманкулова Алия')
 p('Дата проверки проекта  4 октября 2026 года')
 p('\n')
